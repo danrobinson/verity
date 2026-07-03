@@ -25708,6 +25708,238 @@ theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_empty_body
     (NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuelRevived.of_empty_body
       irContract tx hEmpty)
 
+/-- Leave-only selected user bodies discharge the unified selected-body result
+boundary. -/
+theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_leave_body
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (hLeave :
+      ∀ fn,
+        irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+          some fn →
+        fn.body = [.leave]) :
+    NativeGeneratedSelectedUserBodyResultBridgeAtFuel irContract tx state
+      observableSlots :=
+  NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_exec_only_and_preserves
+    irContract tx state observableSlots
+    (NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_leave_body
+      irContract tx state observableSlots hLeave)
+    (NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuelRevived.of_leave_body
+      irContract tx hLeave)
+
+/-- Empty-block selected user bodies discharge the unified selected-body result
+boundary. -/
+theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_block_empty
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (hBlockEmpty :
+      ∀ fn,
+        irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+          some fn →
+        fn.body = [.block []]) :
+    NativeGeneratedSelectedUserBodyResultBridgeAtFuel irContract tx state
+      observableSlots :=
+  NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_exec_only_and_preserves
+    irContract tx state observableSlots
+    (NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_block_empty
+      irContract tx state observableSlots hBlockEmpty)
+    (NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuelRevived.of_block_empty
+      irContract tx hBlockEmpty)
+
+/-- Singleton-comment selected user bodies discharge the unified selected-body
+result boundary. -/
+theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_singleton_comment
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (hComment :
+      ∀ fn,
+        irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+          some fn →
+        ∃ text, fn.body = [.comment text]) :
+    NativeGeneratedSelectedUserBodyResultBridgeAtFuel irContract tx state
+      observableSlots :=
+  NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_exec_only_and_preserves
+    irContract tx state observableSlots
+    (NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_singleton_comment
+      irContract tx state observableSlots hComment)
+    (NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuelRevived.of_singleton_comment
+      irContract tx hComment)
+
+/-- Block-wrapped leave selected user bodies discharge the unified selected-body
+result boundary. -/
+theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_block_leave
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (hBlockLeave :
+      ∀ fn,
+        irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+          some fn →
+        fn.body = [.block [.leave]]) :
+    NativeGeneratedSelectedUserBodyResultBridgeAtFuel irContract tx state
+      observableSlots :=
+  NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_exec_only_and_preserves
+    irContract tx state observableSlots
+    (NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_block_leave
+      irContract tx state observableSlots hBlockLeave)
+    (NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuelRevived.of_block_leave
+      irContract tx hBlockLeave)
+
+/-- Label-prefix leave selected user bodies discharge the unified selected-body
+result boundary. -/
+theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_leave_body_with_label_prefix
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (hLabelLeave :
+      ∀ fn,
+        irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+          some fn →
+        fn.body = [.block [], .leave]) :
+    NativeGeneratedSelectedUserBodyResultBridgeAtFuel irContract tx state
+      observableSlots :=
+  NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_exec_only_and_preserves
+    irContract tx state observableSlots
+    (NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_leave_body_with_label_prefix
+      irContract tx state observableSlots hLabelLeave)
+    (NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuelRevived.of_leave_body_with_label_prefix
+      irContract tx hLabelLeave)
+
+/-- Label-prefix block-leave selected user bodies discharge the unified
+selected-body result boundary. -/
+theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_block_leave_with_label_prefix
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (hLabelBlockLeave :
+      ∀ fn,
+        irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+          some fn →
+        fn.body = [.block [], .block [.leave]]) :
+    NativeGeneratedSelectedUserBodyResultBridgeAtFuel irContract tx state
+      observableSlots :=
+  NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_exec_only_and_preserves
+    irContract tx state observableSlots
+    (NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_block_leave_with_label_prefix
+      irContract tx state observableSlots hLabelBlockLeave)
+    (NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuelRevived.of_block_leave_with_label_prefix
+      irContract tx hLabelBlockLeave)
+
+/-- Syntactic selected-user-body shapes whose native result bridge is currently
+proved without requiring a separate semantic body-execution premise. -/
+inductive NativeGeneratedSelectedUserBodySimpleShape
+    (irContract : IRContract)
+    (tx : IRTransaction) : Prop where
+  | empty
+      (hBody :
+        ∀ fn,
+          irContract.functions.find?
+              (fun fn => fn.selector == tx.functionSelector) =
+            some fn →
+          fn.body = [])
+  | stop
+      (hBody :
+        ∀ fn,
+          irContract.functions.find?
+              (fun fn => fn.selector == tx.functionSelector) =
+            some fn →
+          fn.body = [Yul.YulStmt.exprStmt (Yul.YulExpr.call "stop" [])])
+  | leaveBody
+      (hBody :
+        ∀ fn,
+          irContract.functions.find?
+              (fun fn => fn.selector == tx.functionSelector) =
+            some fn →
+          fn.body = [.leave])
+  | blockEmpty
+      (hBody :
+        ∀ fn,
+          irContract.functions.find?
+              (fun fn => fn.selector == tx.functionSelector) =
+            some fn →
+          fn.body = [.block []])
+  | singletonComment
+      (hBody :
+        ∀ fn,
+          irContract.functions.find?
+              (fun fn => fn.selector == tx.functionSelector) =
+            some fn →
+          ∃ text, fn.body = [.comment text])
+  | blockLeave
+      (hBody :
+        ∀ fn,
+          irContract.functions.find?
+              (fun fn => fn.selector == tx.functionSelector) =
+            some fn →
+          fn.body = [.block [.leave]])
+  | labelLeave
+      (hBody :
+        ∀ fn,
+          irContract.functions.find?
+              (fun fn => fn.selector == tx.functionSelector) =
+            some fn →
+          fn.body = [.block [], .leave])
+  | labelBlockLeave
+      (hBody :
+        ∀ fn,
+          irContract.functions.find?
+              (fun fn => fn.selector == tx.functionSelector) =
+            some fn →
+          fn.body = [.block [], .block [.leave]])
+
+/-- Checked selected-body result bridge for the currently proved simple
+selected-body shapes. -/
+theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_simple_shape
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (hShape : NativeGeneratedSelectedUserBodySimpleShape irContract tx) :
+    NativeGeneratedSelectedUserBodyResultBridgeAtFuel irContract tx state
+      observableSlots := by
+  cases hShape with
+  | empty hBody =>
+      exact
+        NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_empty_body
+          irContract tx state observableSlots hBody
+  | stop hBody =>
+      exact
+        NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_stop_body
+          irContract tx state observableSlots hBody
+  | leaveBody hBody =>
+      exact
+        NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_leave_body
+          irContract tx state observableSlots hBody
+  | blockEmpty hBody =>
+      exact
+        NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_block_empty
+          irContract tx state observableSlots hBody
+  | singletonComment hBody =>
+      exact
+        NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_singleton_comment
+          irContract tx state observableSlots hBody
+  | blockLeave hBody =>
+      exact
+        NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_block_leave
+          irContract tx state observableSlots hBody
+  | labelLeave hBody =>
+      exact
+        NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_leave_body_with_label_prefix
+          irContract tx state observableSlots hBody
+  | labelBlockLeave hBody =>
+      exact
+        NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_block_leave_with_label_prefix
+          irContract tx state observableSlots hBody
+
 /-- The selected-function-body bridge implies the existing top-level revived
 bridge when success guards are supplied by the generated dispatcher prefix. -/
 private theorem NativeGeneratedSelectorHitUserBodyBridgeAtFuelRevived.of_execIRFunction
@@ -28971,6 +29203,53 @@ theorem compile_preserves_native_evmYulLean_of_compile_ok_supported_generated_ca
       spec selectors hSupported irContract tx initialWorld observableSlots
       hcompile htxNormalized hcalldataSizeFits hSelectorRange hSelectorsRange
       hNoWrap hUserBodyResult hEnv
+
+/-- Generated `callDispatcher` preservation theorem for the currently checked
+simple selected-user-body shapes.
+
+This discharges the previous
+`NativeGeneratedSelectedUserBodyResultBridgeAtFuel` premise from concrete
+syntactic selected-body facts such as empty bodies, `stop`, `leave`,
+empty-block bodies, singleton comments, and block/label-prefix leave variants.
+The fully generic native body-simulation theorem remains the next boundary for
+arbitrary selected function bodies. -/
+theorem compile_preserves_native_evmYulLean_of_compile_ok_supported_generated_callDispatcher_simple_selected_body
+    (spec : CompilationModel.CompilationModel) (selectors : List Nat)
+    (hSupported : SupportedSpec spec selectors)
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (initialWorld : Verity.ContractState)
+    (observableSlots : List Nat)
+    (hcompile : CompilationModel.compile spec selectors = Except.ok irContract)
+    (htxNormalized : Function.TxContextNormalized tx)
+    (hcalldataSizeFits : Function.TxCalldataSizeFitsEvm tx)
+    (hSelectorRange : tx.functionSelector < Compiler.Constants.selectorModulus)
+    (hSelectorsRange :
+      ∀ selector, selector ∈ selectors →
+        selector < Compiler.Constants.selectorModulus)
+    (hNoWrap : 4 + tx.args.length * 32 < EvmYul.UInt256.size)
+    (hSimpleBody :
+      NativeGeneratedSelectedUserBodySimpleShape irContract tx)
+    (hEnv :
+      Compiler.Proofs.YulGeneration.Backends.Native.validateNativeRuntimeEnvironment
+        (Compiler.emitYul irContract).runtimeCode (YulTransaction.ofIR tx) =
+          .ok ()) :
+    sourceResultMatchesNativeOn observableSlots
+      (supportedSourceContractSemantics spec selectors hSupported tx
+        initialWorld)
+      (Compiler.Proofs.YulGeneration.Backends.Native.interpretIRRuntimeNative
+        (Nat.succ (sizeOf (Compiler.emitYul irContract).runtimeCode))
+        irContract tx (FunctionBody.initialIRStateForTx spec tx initialWorld)
+        observableSlots) := by
+  exact
+    compile_preserves_native_evmYulLean_of_compile_ok_supported_generated_callDispatcher
+      spec selectors hSupported irContract tx initialWorld observableSlots
+      hcompile htxNormalized hcalldataSizeFits hSelectorRange hSelectorsRange
+      hNoWrap
+      (NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_simple_shape
+        irContract tx (FunctionBody.initialIRStateForTx spec tx initialWorld)
+        observableSlots hSimpleBody)
+      hEnv
 
 /-- Generated `callDispatcher` result theorem from `SupportedSpec + compile`,
 modulo the selected-body proof and the dispatcher continuation provider.
