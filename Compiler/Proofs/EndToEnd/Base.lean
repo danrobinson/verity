@@ -25896,6 +25896,162 @@ inductive NativeGeneratedSelectedUserBodySimpleShape
             some fn →
           fn.body = [.block [], .block [.leave]])
 
+/-- Body-local forms covered by the current checked selected-body bridge. -/
+inductive NativeGeneratedSelectedUserBodySimpleBody :
+    List Yul.YulStmt → Prop where
+  | empty :
+      NativeGeneratedSelectedUserBodySimpleBody []
+  | stop :
+      NativeGeneratedSelectedUserBodySimpleBody
+        [Yul.YulStmt.exprStmt (Yul.YulExpr.call "stop" [])]
+  | leaveBody :
+      NativeGeneratedSelectedUserBodySimpleBody [.leave]
+  | blockEmpty :
+      NativeGeneratedSelectedUserBodySimpleBody [.block []]
+  | singletonComment (text : String) :
+      NativeGeneratedSelectedUserBodySimpleBody [.comment text]
+  | blockLeave :
+      NativeGeneratedSelectedUserBodySimpleBody [.block [.leave]]
+  | labelLeave :
+      NativeGeneratedSelectedUserBodySimpleBody [.block [], .leave]
+  | labelBlockLeave :
+      NativeGeneratedSelectedUserBodySimpleBody
+        [.block [], .block [.leave]]
+
+namespace NativeGeneratedSelectedUserBodySimpleBody
+
+/-- Executable checker for the body-local forms currently covered by the
+selected-body bridge. -/
+def checked? : List Yul.YulStmt → Bool
+  | [] => true
+  | [Yul.YulStmt.exprStmt (Yul.YulExpr.call "stop" [])] => true
+  | [.leave] => true
+  | [.block []] => true
+  | [.comment _] => true
+  | [.block [.leave]] => true
+  | [.block [], .leave] => true
+  | [.block [], .block [.leave]] => true
+  | _ => false
+
+theorem of_checked? (body : List Yul.YulStmt)
+    (h : checked? body = true) :
+    NativeGeneratedSelectedUserBodySimpleBody body := by
+  unfold checked? at h
+  split at h
+  · exact empty
+  · exact stop
+  · exact leaveBody
+  · exact blockEmpty
+  · exact singletonComment _
+  · exact blockLeave
+  · exact labelLeave
+  · exact labelBlockLeave
+  · contradiction
+
+end NativeGeneratedSelectedUserBodySimpleBody
+
+namespace NativeGeneratedSelectedUserBodySimpleShape
+
+/-- Executable checker for the selected function body when a selector hit is
+present. Selector misses satisfy the selected-body shape vacuously. -/
+def checked? (irContract : IRContract) (tx : IRTransaction) : Bool :=
+  match irContract.functions.find?
+      (fun fn => fn.selector == tx.functionSelector) with
+  | none => true
+  | some fn => NativeGeneratedSelectedUserBodySimpleBody.checked? fn.body
+
+theorem of_checked?
+    {irContract : IRContract} {tx : IRTransaction}
+    (hCheck :
+      NativeGeneratedSelectedUserBodySimpleShape.checked? irContract tx =
+        true) :
+    NativeGeneratedSelectedUserBodySimpleShape irContract tx := by
+  unfold checked? at hCheck
+  cases hFind :
+      irContract.functions.find?
+        (fun fn => fn.selector == tx.functionSelector) with
+  | none =>
+      exact
+        NativeGeneratedSelectedUserBodySimpleShape.empty
+          (by
+            intro fn hFn
+            rw [hFind] at hFn
+            cases hFn)
+  | some selected =>
+      simp [hFind] at hCheck
+      cases selected with
+      | mk name selector params ret payable body =>
+          have hBody :
+              NativeGeneratedSelectedUserBodySimpleBody body :=
+            NativeGeneratedSelectedUserBodySimpleBody.of_checked? body hCheck
+          cases hBody with
+          | empty =>
+              exact
+                NativeGeneratedSelectedUserBodySimpleShape.empty
+                  (by
+                    intro fn hFn
+                    rw [hFind] at hFn
+                    cases hFn
+                    rfl)
+          | stop =>
+              exact
+                NativeGeneratedSelectedUserBodySimpleShape.stop
+                  (by
+                    intro fn hFn
+                    rw [hFind] at hFn
+                    cases hFn
+                    rfl)
+          | leaveBody =>
+              exact
+                NativeGeneratedSelectedUserBodySimpleShape.leaveBody
+                  (by
+                    intro fn hFn
+                    rw [hFind] at hFn
+                    cases hFn
+                    rfl)
+          | blockEmpty =>
+              exact
+                NativeGeneratedSelectedUserBodySimpleShape.blockEmpty
+                  (by
+                    intro fn hFn
+                    rw [hFind] at hFn
+                    cases hFn
+                    rfl)
+          | singletonComment text =>
+              exact
+                NativeGeneratedSelectedUserBodySimpleShape.singletonComment
+                  (by
+                    intro fn hFn
+                    rw [hFind] at hFn
+                    cases hFn
+                    exact ⟨text, rfl⟩)
+          | blockLeave =>
+              exact
+                NativeGeneratedSelectedUserBodySimpleShape.blockLeave
+                  (by
+                    intro fn hFn
+                    rw [hFind] at hFn
+                    cases hFn
+                    rfl)
+          | labelLeave =>
+              exact
+                NativeGeneratedSelectedUserBodySimpleShape.labelLeave
+                  (by
+                    intro fn hFn
+                    rw [hFind] at hFn
+                    cases hFn
+                    rfl)
+          | labelBlockLeave =>
+              exact
+                NativeGeneratedSelectedUserBodySimpleShape.labelBlockLeave
+                  (by
+                    intro fn hFn
+                    rw [hFind] at hFn
+                    cases hFn
+                    rfl)
+
+end NativeGeneratedSelectedUserBodySimpleShape
+
 /-- Checked selected-body result bridge for the currently proved simple
 selected-body shapes. -/
 theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_simple_shape
