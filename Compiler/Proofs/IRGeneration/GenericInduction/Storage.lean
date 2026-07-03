@@ -503,38 +503,72 @@ private theorem fieldWriteEntriesAt_alias_mem
     (hmem : slot ∈ field.aliasSlots) :
     SourceSemantics.wordNormalize slot ∈
       (fieldWriteEntriesAt idx field).map (fun entry => entry.1) := by
-    obtain ⟨name, ty, isTransient, slotOpt, packedBits, aliasSlots⟩ := field
-    obtain ⟨aliasIdx, halias⟩ : ∃ i, (slot, i) ∈ aliasSlots.zipIdx :=
-      exists_mem_zipIdx_of_mem hmem
-    cases ty with
-    | uint256 =>
+  obtain ⟨aliasIdx, halias⟩ : ∃ i, (slot, i) ∈ field.aliasSlots.zipIdx :=
+    exists_mem_zipIdx_of_mem hmem
+  cases hty : field.ty with
+  | uint256 =>
+      have hEntry :
+          (SourceSemantics.wordNormalize slot,
+              s!"{field.name}.aliasSlots[{aliasIdx}]", field.packedBits) ∈
+            fieldWriteEntriesAt idx field := by
         simp [fieldWriteEntriesAt, firstFieldWriteSlotConflict.fieldOccupiedSlots,
-          SourceSemantics.wordNormalize]
-        exact Or.inr ⟨_, _, _, _, halias, rfl, rfl, rfl⟩
-    | address =>
+          SourceSemantics.wordNormalize, hty]
+        exact Or.inr ⟨slot, aliasIdx, halias, rfl, rfl⟩
+      exact List.mem_map_of_mem hEntry
+  | address =>
+      have hEntry :
+          (SourceSemantics.wordNormalize slot,
+              s!"{field.name}.aliasSlots[{aliasIdx}]", field.packedBits) ∈
+            fieldWriteEntriesAt idx field := by
         simp [fieldWriteEntriesAt, firstFieldWriteSlotConflict.fieldOccupiedSlots,
-          SourceSemantics.wordNormalize]
-        exact Or.inr ⟨_, _, _, _, halias, rfl, rfl, rfl⟩
-    | adt _ maxFields =>
+          SourceSemantics.wordNormalize, hty]
+        exact Or.inr ⟨slot, aliasIdx, halias, rfl, rfl⟩
+      exact List.mem_map_of_mem hEntry
+  | adt _ maxFields =>
+      have hEntry :
+          (SourceSemantics.wordNormalize slot,
+              s!"{field.name}.aliasSlots[{aliasIdx}]", none) ∈
+            fieldWriteEntriesAt idx field := by
         simp [fieldWriteEntriesAt, firstFieldWriteSlotConflict.fieldOccupiedSlots,
-          SourceSemantics.wordNormalize]
-        exact Or.inr ⟨s!"{name}.aliasSlots[{aliasIdx}]", none, slot, aliasIdx, halias, 0, by omega, by simp⟩
-    | dynamicArray _ =>
+          SourceSemantics.wordNormalize, hty]
+        exact Or.inr ⟨slot, aliasIdx, halias, 0, by omega, by simp⟩
+      exact List.mem_map_of_mem hEntry
+  | dynamicArray _ =>
+      have hEntry :
+          (SourceSemantics.wordNormalize slot,
+              s!"{field.name}.aliasSlots[{aliasIdx}]", field.packedBits) ∈
+            fieldWriteEntriesAt idx field := by
         simp [fieldWriteEntriesAt, firstFieldWriteSlotConflict.fieldOccupiedSlots,
-          SourceSemantics.wordNormalize]
-        exact Or.inr ⟨_, _, _, _, halias, rfl, rfl, rfl⟩
-    | mappingTyped _ =>
+          SourceSemantics.wordNormalize, hty]
+        exact Or.inr ⟨slot, aliasIdx, halias, rfl, rfl⟩
+      exact List.mem_map_of_mem hEntry
+  | mappingTyped _ =>
+      have hEntry :
+          (SourceSemantics.wordNormalize slot,
+              s!"{field.name}.aliasSlots[{aliasIdx}]", field.packedBits) ∈
+            fieldWriteEntriesAt idx field := by
         simp [fieldWriteEntriesAt, firstFieldWriteSlotConflict.fieldOccupiedSlots,
-          SourceSemantics.wordNormalize]
-        exact Or.inr ⟨_, _, _, _, halias, rfl, rfl, rfl⟩
-    | mappingStruct _ _ =>
+          SourceSemantics.wordNormalize, hty]
+        exact Or.inr ⟨slot, aliasIdx, halias, rfl, rfl⟩
+      exact List.mem_map_of_mem hEntry
+  | mappingStruct _ _ =>
+      have hEntry :
+          (SourceSemantics.wordNormalize slot,
+              s!"{field.name}.aliasSlots[{aliasIdx}]", field.packedBits) ∈
+            fieldWriteEntriesAt idx field := by
         simp [fieldWriteEntriesAt, firstFieldWriteSlotConflict.fieldOccupiedSlots,
-          SourceSemantics.wordNormalize]
-        exact Or.inr ⟨_, _, _, _, halias, rfl, rfl, rfl⟩
-    | mappingStruct2 _ _ _ =>
+          SourceSemantics.wordNormalize, hty]
+        exact Or.inr ⟨slot, aliasIdx, halias, rfl, rfl⟩
+      exact List.mem_map_of_mem hEntry
+  | mappingStruct2 _ _ _ =>
+      have hEntry :
+          (SourceSemantics.wordNormalize slot,
+              s!"{field.name}.aliasSlots[{aliasIdx}]", field.packedBits) ∈
+            fieldWriteEntriesAt idx field := by
         simp [fieldWriteEntriesAt, firstFieldWriteSlotConflict.fieldOccupiedSlots,
-          SourceSemantics.wordNormalize]
-        exact Or.inr ⟨_, _, _, _, halias, rfl, rfl, rfl⟩
+          SourceSemantics.wordNormalize, hty]
+        exact Or.inr ⟨slot, aliasIdx, halias, rfl, rfl⟩
+      exact List.mem_map_of_mem hEntry
 
 private theorem fieldWriteEntriesAt_packed_none_of_unpacked
     {idx : Nat} {field : Field} {packed : Option PackedBits}
@@ -2026,105 +2060,7 @@ private theorem compatScratch_startsWith_reserved
       name = "__compat_slot_word" ∨
       name = "__compat_slot_cleared") :
     name.startsWith "__" = true := by
-  rcases h with h | h
-  · subst h
-    unfold String.startsWith
-    change Substring.beq ("__compat_value".toSubstring.take "__".length) "__".toSubstring = true
-    simp [Substring.beq, String.toSubstring, Substring.take]
-    constructor
-    · rfl
-    · unfold String.substrEq
-      simp
-      constructor
-      · decide
-      · unfold String.substrEq.loop
-        simp
-        right
-        constructor
-        · rfl
-        · unfold String.substrEq.loop
-          simp
-          right
-          constructor
-          · rfl
-          · unfold String.substrEq.loop
-            simp
-            left
-            decide
-  rcases h with h | h
-  · subst h
-    unfold String.startsWith
-    change Substring.beq ("__compat_packed".toSubstring.take "__".length) "__".toSubstring = true
-    simp [Substring.beq, String.toSubstring, Substring.take]
-    constructor
-    · rfl
-    · unfold String.substrEq
-      simp
-      constructor
-      · decide
-      · unfold String.substrEq.loop
-        simp
-        right
-        constructor
-        · rfl
-        · unfold String.substrEq.loop
-          simp
-          right
-          constructor
-          · rfl
-          · unfold String.substrEq.loop
-            simp
-            left
-            decide
-  rcases h with h | h
-  · subst h
-    unfold String.startsWith
-    change Substring.beq ("__compat_slot_word".toSubstring.take "__".length) "__".toSubstring = true
-    simp [Substring.beq, String.toSubstring, Substring.take]
-    constructor
-    · rfl
-    · unfold String.substrEq
-      simp
-      constructor
-      · decide
-      · unfold String.substrEq.loop
-        simp
-        right
-        constructor
-        · rfl
-        · unfold String.substrEq.loop
-          simp
-          right
-          constructor
-          · rfl
-          · unfold String.substrEq.loop
-            simp
-            left
-            decide
-  · subst h
-    unfold String.startsWith
-    change Substring.beq ("__compat_slot_cleared".toSubstring.take "__".length) "__".toSubstring = true
-    simp [Substring.beq, String.toSubstring, Substring.take]
-    constructor
-    · rfl
-    · unfold String.substrEq
-      simp
-      constructor
-      · decide
-      · unfold String.substrEq.loop
-        simp
-        right
-        constructor
-        · rfl
-        · unfold String.substrEq.loop
-          simp
-          right
-          constructor
-          · rfl
-          · unfold String.substrEq.loop
-            simp
-            left
-            decide
+  rcases h with rfl | rfl | rfl | rfl <;> native_decide
 
 private theorem compatScratch_not_internalImmutable
     {name : String}
@@ -2134,113 +2070,7 @@ private theorem compatScratch_not_internalImmutable
       name = "__compat_slot_word" ∨
       name = "__compat_slot_cleared") :
     name.startsWith "__immutable_" = false := by
-  rcases h with h | h
-  · subst h
-    unfold String.startsWith
-    change Substring.beq ("__compat_value".toSubstring.take "__immutable_".length)
-      "__immutable_".toSubstring = false
-    simp [Substring.beq, String.toSubstring, Substring.take]
-    intro hlen
-    unfold String.substrEq
-    simp
-    intro h1
-    intro h2
-    unfold String.substrEq.loop
-    simp
-    constructor
-    · decide
-    · intro hchar
-      unfold String.substrEq.loop
-      simp
-      constructor
-      · decide
-      · intro hchar2
-        unfold String.substrEq.loop
-        simp
-        constructor
-        · decide
-        · intro hchar3
-          cases hchar3
-  rcases h with h | h
-  · subst h
-    unfold String.startsWith
-    change Substring.beq ("__compat_packed".toSubstring.take "__immutable_".length)
-      "__immutable_".toSubstring = false
-    simp [Substring.beq, String.toSubstring, Substring.take]
-    intro hlen
-    unfold String.substrEq
-    simp
-    intro h1
-    intro h2
-    unfold String.substrEq.loop
-    simp
-    constructor
-    · decide
-    · intro hchar
-      unfold String.substrEq.loop
-      simp
-      constructor
-      · decide
-      · intro hchar2
-        unfold String.substrEq.loop
-        simp
-        constructor
-        · decide
-        · intro hchar3
-          cases hchar3
-  rcases h with h | h
-  · subst h
-    unfold String.startsWith
-    change Substring.beq ("__compat_slot_word".toSubstring.take "__immutable_".length)
-      "__immutable_".toSubstring = false
-    simp [Substring.beq, String.toSubstring, Substring.take]
-    intro hlen
-    unfold String.substrEq
-    simp
-    intro h1
-    intro h2
-    unfold String.substrEq.loop
-    simp
-    constructor
-    · decide
-    · intro hchar
-      unfold String.substrEq.loop
-      simp
-      constructor
-      · decide
-      · intro hchar2
-        unfold String.substrEq.loop
-        simp
-        constructor
-        · decide
-        · intro hchar3
-          cases hchar3
-  · subst h
-    unfold String.startsWith
-    change Substring.beq ("__compat_slot_cleared".toSubstring.take "__immutable_".length)
-      "__immutable_".toSubstring = false
-    simp [Substring.beq, String.toSubstring, Substring.take]
-    intro hlen
-    unfold String.substrEq
-    simp
-    intro h1
-    intro h2
-    unfold String.substrEq.loop
-    simp
-    constructor
-    · decide
-    · intro hchar
-      unfold String.substrEq.loop
-      simp
-      constructor
-      · decide
-      · intro hchar2
-        unfold String.substrEq.loop
-        simp
-        constructor
-        · decide
-        · intro hchar3
-          cases hchar3
+  rcases h with rfl | rfl | rfl | rfl <;> native_decide
 
 private theorem validateIdentifierShapes_fieldName_ne_reservedScratch
     {spec : CompilationModel}

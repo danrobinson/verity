@@ -52,14 +52,15 @@ private def selfDelegateMulticallBytesSmokeSpec : CompilationModel := {
   fields := []
   «constructor» := none
   functions := [
-    { name := "multicall"
-      params := [
-        { name := "calls", ty := ParamType.array ParamType.bytes }
-      ]
-      returnType := none
-      body := [
-        Compiler.Modules.Calls.selfDelegateMulticallBytes "calls",
-        Stmt.stop
+      { name := "multicall"
+        params := [
+          { name := "calls", ty := ParamType.array ParamType.bytes }
+        ]
+        returnType := none
+        reentrancyTrusted := true
+        body := [
+          Compiler.Modules.Calls.selfDelegateMulticallBytes "calls",
+          Stmt.stop
       ]
     }
   ]
@@ -89,14 +90,15 @@ private def selfDelegateMulticallBytesEmptyParamSpec : CompilationModel := {
   fields := []
   «constructor» := none
   functions := [
-    { name := "bad"
-      params := [
-        { name := "calls", ty := ParamType.array ParamType.bytes }
-      ]
-      returnType := none
-      body := [
-        Compiler.Modules.Calls.selfDelegateMulticallBytes "",
-        Stmt.stop
+      { name := "bad"
+        params := [
+          { name := "calls", ty := ParamType.array ParamType.bytes }
+        ]
+        returnType := none
+        reentrancyTrusted := true
+        body := [
+          Compiler.Modules.Calls.selfDelegateMulticallBytes "",
+          Stmt.stop
       ]
     }
   ]

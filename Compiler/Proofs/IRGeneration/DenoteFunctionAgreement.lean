@@ -125,13 +125,14 @@ theorem findDynamicArrayElementAtSlot_scanElements_eq (targetSlot : Nat) :
           values idx =
         SourceSemantics.findDynamicArrayElementAtSlot.scanElements targetSlot baseSlot
           values idx
-  | _, [], _ => rfl
-  | baseSlot, value :: rest, idx => by
+  | baseSlot, values, idx => by
+    induction values generalizing idx with
+    | nil => rfl
+    | cons _ rest ih =>
       simp only [Denote.findDynamicArrayElementAtSlot.scanElements,
         SourceSemantics.findDynamicArrayElementAtSlot.scanElements,
         sourceOracle_mappingSlot, Compiler.Proofs.abstractMappingSlot_eq_solidity]
-      rw [findDynamicArrayElementAtSlot_scanElements_eq targetSlot baseSlot rest (idx + 1)]
-      rfl
+      split <;> simp_all
 
 theorem findDynamicArrayElementAtSlot_go_eq
     (world : Verity.ContractState) (targetSlot : Nat) :

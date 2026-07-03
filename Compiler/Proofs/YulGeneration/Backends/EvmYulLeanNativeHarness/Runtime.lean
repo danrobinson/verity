@@ -41,8 +41,14 @@ private theorem exec_lowerNativeSwitchBlock_simpleStorageSelectors_find_none_wit
       [(0x6057361d, storeBody), (0x2e64cec1, retrieveBody)].find?
           (fun entry => entry.1 == selector) = none)
     (hSelectorRange : selector < EvmYul.UInt256.size) :
+    let revertState : EvmYul.Yul.State :=
+      (nativeSwitchPrefixStateForId contract tx storage observableSlots
+        switchId).setMachineState
+          ((nativeSwitchPrefixStateForId contract tx storage observableSlots
+            switchId).toMachineState.evmRevert
+              (EvmYul.UInt256.ofNat 0) (EvmYul.UInt256.ofNat 0))
     EvmYul.Yul.exec
-        (fuel + [(0x6057361d, storeBody), (0x2e64cec1, retrieveBody)].length + 12)
+        (fuel + [(0x6057361d, storeBody), (0x2e64cec1, retrieveBody)].length + 13)
         (Backends.lowerNativeSwitchBlock
           Compiler.Proofs.YulGeneration.selectorExpr
           switchId
@@ -50,14 +56,14 @@ private theorem exec_lowerNativeSwitchBlock_simpleStorageSelectors_find_none_wit
           [nativeRevertZeroZeroStmt])
         (some contract)
         (nativeSwitchInitialOkState contract tx storage observableSlots) =
-      .error EvmYul.Yul.Exception.Revert ∧
+      .error (EvmYul.Yul.Exception.Revert revertState) ∧
     (projectResult tx storage initialEvents
-        (.error EvmYul.Yul.Exception.Revert)).success = false ∧
+        (.error (EvmYul.Yul.Exception.Revert revertState))).success = false ∧
     (projectResult tx storage initialEvents
-        (.error EvmYul.Yul.Exception.Revert)).returnValue = none ∧
+        (.error (EvmYul.Yul.Exception.Revert revertState))).returnValue = none ∧
     (∀ slot,
       (projectResult tx storage initialEvents
-        (.error EvmYul.Yul.Exception.Revert)).finalStorage (IRStorageSlot.ofNat slot) =
+        (.error (EvmYul.Yul.Exception.Revert revertState))).finalStorage (IRStorageSlot.ofNat slot) =
           storage (IRStorageSlot.ofNat slot)) := by
   exact
     exec_lowerNativeSwitchBlock_selector_find_none_with_revert_default_projectResult
@@ -88,8 +94,14 @@ private theorem exec_lowerNativeSwitchBlock_simpleStorageSelectors_find_none_wit
       [(0x6057361d, storeBody), (0x2e64cec1, retrieveBody)].find?
           (fun entry => entry.1 == selector) = none)
     (hSelectorRange : selector < EvmYul.UInt256.size) :
+    let revertState : EvmYul.Yul.State :=
+      (nativeSwitchPrefixStateForId contract tx storage observableSlots
+        switchId).setMachineState
+          ((nativeSwitchPrefixStateForId contract tx storage observableSlots
+            switchId).toMachineState.evmRevert
+              (EvmYul.UInt256.ofNat 0) (EvmYul.UInt256.ofNat 0))
     EvmYul.Yul.exec
-        (fuel + [(0x6057361d, storeBody), (0x2e64cec1, retrieveBody)].length + 12)
+        (fuel + [(0x6057361d, storeBody), (0x2e64cec1, retrieveBody)].length + 13)
         (Backends.lowerNativeSwitchBlock
           Compiler.Proofs.YulGeneration.selectorExpr
           switchId
@@ -97,9 +109,9 @@ private theorem exec_lowerNativeSwitchBlock_simpleStorageSelectors_find_none_wit
           [nativeRevertZeroZeroStmt])
         (some contract)
         (nativeSwitchInitialOkState contract tx storage observableSlots) =
-      .error EvmYul.Yul.Exception.Revert ∧
+      .error (EvmYul.Yul.Exception.Revert revertState) ∧
     projectResult tx storage initialEvents
-        (.error EvmYul.Yul.Exception.Revert) =
+        (.error (EvmYul.Yul.Exception.Revert revertState)) =
       { success := false
         returnValue := none
         finalStorage := storage
@@ -168,8 +180,14 @@ private theorem exec_lowerNativeSwitchBlock_simpleStorageSelectors_tx_find_none_
     (hSelectorBound : tx.functionSelector < Compiler.Constants.selectorModulus)
     (hFind : [(0x6057361d, storeBody), (0x2e64cec1, retrieveBody)].find?
         (fun entry => entry.1 == tx.functionSelector % Compiler.Constants.selectorModulus) = none) :
+    let revertState : EvmYul.Yul.State :=
+      (nativeSwitchPrefixStateForId contract tx storage observableSlots
+        switchId).setMachineState
+          ((nativeSwitchPrefixStateForId contract tx storage observableSlots
+            switchId).toMachineState.evmRevert
+              (EvmYul.UInt256.ofNat 0) (EvmYul.UInt256.ofNat 0))
     EvmYul.Yul.exec
-        (fuel + [(0x6057361d, storeBody), (0x2e64cec1, retrieveBody)].length + 12)
+        (fuel + [(0x6057361d, storeBody), (0x2e64cec1, retrieveBody)].length + 13)
         (Backends.lowerNativeSwitchBlock
           Compiler.Proofs.YulGeneration.selectorExpr
           switchId
@@ -177,11 +195,11 @@ private theorem exec_lowerNativeSwitchBlock_simpleStorageSelectors_tx_find_none_
           [nativeRevertZeroZeroStmt])
         (some contract)
         (nativeSwitchInitialOkState contract tx storage observableSlots) =
-      .error EvmYul.Yul.Exception.Revert ∧
+      .error (EvmYul.Yul.Exception.Revert revertState) ∧
     projectResult tx storage initialEvents
-        (.error EvmYul.Yul.Exception.Revert) =
+        (.error (EvmYul.Yul.Exception.Revert revertState)) =
       simpleStorageRevertProjectedResult storage initialEvents := by
-  exact
+  simpa [simpleStorageRevertProjectedResult] using
     exec_lowerNativeSwitchBlock_simpleStorageSelectors_find_none_with_revert_default_projectResult_eq
       fuel (tx.functionSelector % Compiler.Constants.selectorModulus) switchId
       storeBody retrieveBody contract tx storage initialEvents observableSlots
@@ -195,7 +213,7 @@ private theorem exec_lowerNativeSwitchBlock_simpleStorageSelectors_tx_find_none_
             Compiler.Constants.selectorModulus < EvmYul.UInt256.size := by
           norm_num [Compiler.Constants.selectorModulus, EvmYul.UInt256.size]
         rw [hmod]
-        omega) |>.imp_right (by intro h; simp [simpleStorageRevertProjectedResult] at h ⊢)
+        omega)
 
 /-- Guarded selector-miss execution for the concrete SimpleStorage dispatcher,
     using the semantic selector disequalities instead of the raw generated
@@ -216,8 +234,14 @@ private theorem exec_lowerNativeSwitchBlock_simpleStorageSelectors_tx_miss_with_
     (hSelectorBound : tx.functionSelector < Compiler.Constants.selectorModulus)
     (hNotStore : tx.functionSelector ≠ 0x6057361d)
     (hNotRetrieve : tx.functionSelector ≠ 0x2e64cec1) :
+    let revertState : EvmYul.Yul.State :=
+      (nativeSwitchPrefixStateForId contract tx storage observableSlots
+        switchId).setMachineState
+          ((nativeSwitchPrefixStateForId contract tx storage observableSlots
+            switchId).toMachineState.evmRevert
+              (EvmYul.UInt256.ofNat 0) (EvmYul.UInt256.ofNat 0))
     EvmYul.Yul.exec
-        (fuel + [(0x6057361d, storeBody), (0x2e64cec1, retrieveBody)].length + 12)
+        (fuel + [(0x6057361d, storeBody), (0x2e64cec1, retrieveBody)].length + 13)
         (Backends.lowerNativeSwitchBlock
           Compiler.Proofs.YulGeneration.selectorExpr
           switchId
@@ -225,9 +249,9 @@ private theorem exec_lowerNativeSwitchBlock_simpleStorageSelectors_tx_miss_with_
           [nativeRevertZeroZeroStmt])
         (some contract)
         (nativeSwitchInitialOkState contract tx storage observableSlots) =
-      .error EvmYul.Yul.Exception.Revert ∧
+      .error (EvmYul.Yul.Exception.Revert revertState) ∧
     projectResult tx storage initialEvents
-        (.error EvmYul.Yul.Exception.Revert) =
+        (.error (EvmYul.Yul.Exception.Revert revertState)) =
       simpleStorageRevertProjectedResult storage initialEvents := by
   apply
     exec_lowerNativeSwitchBlock_simpleStorageSelectors_tx_find_none_with_revert_default_projectResult_eq
@@ -255,9 +279,15 @@ private theorem exec_lowerNativeSwitchBlock_simpleStorageConcrete_tx_miss_with_r
     (hSelectorBound : tx.functionSelector < Compiler.Constants.selectorModulus)
     (hNotStore : tx.functionSelector ≠ 0x6057361d)
     (hNotRetrieve : tx.functionSelector ≠ 0x2e64cec1) :
+    let revertState : EvmYul.Yul.State :=
+      (nativeSwitchPrefixStateForId contract tx storage observableSlots
+        switchId).setMachineState
+          ((nativeSwitchPrefixStateForId contract tx storage observableSlots
+            switchId).toMachineState.evmRevert
+              (EvmYul.UInt256.ofNat 0) (EvmYul.UInt256.ofNat 0))
     EvmYul.Yul.exec
         (fuel + [(0x6057361d, simpleStorageNativeStoreBody),
-          (0x2e64cec1, simpleStorageNativeRetrieveBody)].length + 12)
+          (0x2e64cec1, simpleStorageNativeRetrieveBody)].length + 13)
         (Backends.lowerNativeSwitchBlock
           Compiler.Proofs.YulGeneration.selectorExpr
           switchId
@@ -266,9 +296,9 @@ private theorem exec_lowerNativeSwitchBlock_simpleStorageConcrete_tx_miss_with_r
           [nativeRevertZeroZeroStmt])
         (some contract)
         (nativeSwitchInitialOkState contract tx storage observableSlots) =
-      .error EvmYul.Yul.Exception.Revert ∧
+      .error (EvmYul.Yul.Exception.Revert revertState) ∧
     projectResult tx storage initialEvents
-        (.error EvmYul.Yul.Exception.Revert) =
+        (.error (EvmYul.Yul.Exception.Revert revertState)) =
       simpleStorageRevertProjectedResult storage initialEvents := by
   exact
     exec_lowerNativeSwitchBlock_simpleStorageSelectors_tx_miss_with_revert_default_projectResult_eq
@@ -292,15 +322,12 @@ private theorem exec_lowerNativeSwitchBlock_simpleStorageSelectors_store_hit_err
     (hBody : ∀ pre suffix,
       [(0x6057361d, storeBody), (0x2e64cec1, retrieveBody)] =
           pre ++ (0x6057361d, storeBody) :: suffix →
-        EvmYul.Yul.exec ((fuel + 1) + suffix.length + 7)
-          (.Block storeBody) (some contract)
-          ((nativeSwitchPrefixFinalState contract tx storage observableSlots
-            (Backends.nativeSwitchDiscrTempName switchId)
-            (Backends.nativeSwitchMatchedTempName switchId)).insert
-              (Backends.nativeSwitchMatchedTempName switchId)
-              (EvmYul.UInt256.ofNat 1)) = .error err) :
+        EvmYul.Yul.execSeq ((fuel + 1) + suffix.length + 6)
+          storeBody (some contract)
+          (nativeSwitchMarkedPrefixStateForId contract tx storage
+            observableSlots switchId) = .error err) :
     EvmYul.Yul.exec
-        (fuel + [(0x6057361d, storeBody), (0x2e64cec1, retrieveBody)].length + 12)
+        (fuel + [(0x6057361d, storeBody), (0x2e64cec1, retrieveBody)].length + 13)
         (Backends.lowerNativeSwitchBlock
           Compiler.Proofs.YulGeneration.selectorExpr
           switchId
@@ -318,7 +345,10 @@ private theorem exec_lowerNativeSwitchBlock_simpleStorageSelectors_store_hit_err
       (by simp)
       (by norm_num [EvmYul.UInt256.size])
       (simpleStorageSelectors_tagsRange storeBody retrieveBody)
-      hBody
+      (by
+        intro pre suffix hCases
+        simpa [nativeSwitchMarkedPrefixStateForId, nativeSwitchPrefixStateForId]
+          using hBody pre suffix hCases)
 
 /-- Store-prefix variant of `_simpleStorageSelectors_store_hit_error_fuel`,
     lifting the SimpleStorage store-hit selector specialization to states
@@ -334,11 +364,15 @@ private theorem exec_lowerNativeSwitchBlock_simpleStorageSelectors_store_hit_err
     (store : EvmYul.Yul.VarStore)
     (err : EvmYul.Yul.Exception)
     (hSelector : 0x6057361d = tx.functionSelector % Compiler.Constants.selectorModulus)
+    (hDiscrFresh :
+      store.lookup (Backends.nativeSwitchDiscrTempName switchId) = none)
+    (hMatchedFresh :
+      store.lookup (Backends.nativeSwitchMatchedTempName switchId) = none)
     (hBody : ∀ pre suffix,
       [(0x6057361d, storeBody), (0x2e64cec1, retrieveBody)] =
           pre ++ (0x6057361d, storeBody) :: suffix →
-        EvmYul.Yul.exec ((fuel + 1) + suffix.length + 7)
-          (.Block storeBody) (some contract)
+        EvmYul.Yul.execSeq ((fuel + 1) + suffix.length + 6)
+          storeBody (some contract)
           ((((.Ok (initialState contract tx storage observableSlots).sharedState
                   store : EvmYul.Yul.State).insert
                 (Backends.nativeSwitchDiscrTempName switchId)
@@ -349,7 +383,7 @@ private theorem exec_lowerNativeSwitchBlock_simpleStorageSelectors_store_hit_err
               (Backends.nativeSwitchMatchedTempName switchId)
               (EvmYul.UInt256.ofNat 1)) = .error err) :
     EvmYul.Yul.exec
-        (fuel + [(0x6057361d, storeBody), (0x2e64cec1, retrieveBody)].length + 12)
+        (fuel + [(0x6057361d, storeBody), (0x2e64cec1, retrieveBody)].length + 13)
         (Backends.lowerNativeSwitchBlock
           Compiler.Proofs.YulGeneration.selectorExpr
           switchId
@@ -367,6 +401,7 @@ private theorem exec_lowerNativeSwitchBlock_simpleStorageSelectors_store_hit_err
       (by simp)
       (by norm_num [EvmYul.UInt256.size])
       (simpleStorageSelectors_tagsRange storeBody retrieveBody)
+      hDiscrFresh hMatchedFresh
       hBody
 
 private def simpleStorageStoreHaltProjectedResult
@@ -400,8 +435,8 @@ private theorem exec_lowerNativeSwitchBlock_simpleStorageSelectors_store_hit_pro
     (hBody : ∀ pre suffix,
       [(0x6057361d, storeBody), (0x2e64cec1, retrieveBody)] =
           pre ++ (0x6057361d, storeBody) :: suffix →
-      EvmYul.Yul.exec ((fuel + 1) + suffix.length + 7)
-        (.Block storeBody) (some contract)
+      EvmYul.Yul.execSeq ((fuel + 1) + suffix.length + 6)
+        storeBody (some contract)
         (nativeSwitchMarkedPrefixStateForId contract tx storage
           observableSlots switchId) =
           .error (EvmYul.Yul.Exception.YulHalt haltState haltValue))
@@ -410,7 +445,7 @@ private theorem exec_lowerNativeSwitchBlock_simpleStorageSelectors_store_hit_pro
           (.error (EvmYul.Yul.Exception.YulHalt haltState haltValue)) =
         simpleStorageStoreHaltProjectedResult tx initialEvents haltState) :
       EvmYul.Yul.exec
-          (fuel + [(0x6057361d, storeBody), (0x2e64cec1, retrieveBody)].length + 12)
+          (fuel + [(0x6057361d, storeBody), (0x2e64cec1, retrieveBody)].length + 13)
           (Backends.lowerNativeSwitchBlock
             Compiler.Proofs.YulGeneration.selectorExpr
             switchId
@@ -449,8 +484,8 @@ private theorem exec_lowerNativeSwitchBlock_simpleStorageConcrete_store_hit_proj
     (hBody : ∀ pre suffix,
       simpleStorageNativeSelectorCases =
           pre ++ (0x6057361d, simpleStorageNativeStoreBody) :: suffix →
-      EvmYul.Yul.exec ((fuel + 1) + suffix.length + 7)
-        (.Block simpleStorageNativeStoreBody) (some contract)
+      EvmYul.Yul.execSeq ((fuel + 1) + suffix.length + 6)
+        simpleStorageNativeStoreBody (some contract)
         (nativeSwitchMarkedPrefixStateForId contract tx storage
           observableSlots switchId) =
           .error (EvmYul.Yul.Exception.YulHalt haltState haltValue))
@@ -459,7 +494,7 @@ private theorem exec_lowerNativeSwitchBlock_simpleStorageConcrete_store_hit_proj
           (EvmYul.Yul.Exception.YulHalt haltState haltValue)) =
         simpleStorageStoreHaltProjectedResult tx initialEvents haltState) :
       EvmYul.Yul.exec
-          (fuel + simpleStorageNativeSelectorCases.length + 12)
+          (fuel + simpleStorageNativeSelectorCases.length + 13)
           (Backends.lowerNativeSwitchBlock
             Compiler.Proofs.YulGeneration.selectorExpr
             switchId simpleStorageNativeSelectorCases [nativeRevertZeroZeroStmt])
@@ -494,15 +529,12 @@ private theorem exec_lowerNativeSwitchBlock_simpleStorageSelectors_retrieve_hit_
     (hBody : ∀ pre suffix,
       [(0x6057361d, storeBody), (0x2e64cec1, retrieveBody)] =
           pre ++ (0x2e64cec1, retrieveBody) :: suffix →
-        EvmYul.Yul.exec ((fuel + 1) + suffix.length + 7)
-          (.Block retrieveBody) (some contract)
-          ((nativeSwitchPrefixFinalState contract tx storage observableSlots
-            (Backends.nativeSwitchDiscrTempName switchId)
-            (Backends.nativeSwitchMatchedTempName switchId)).insert
-              (Backends.nativeSwitchMatchedTempName switchId)
-              (EvmYul.UInt256.ofNat 1)) = .error err) :
+        EvmYul.Yul.execSeq ((fuel + 1) + suffix.length + 6)
+          retrieveBody (some contract)
+          (nativeSwitchMarkedPrefixStateForId contract tx storage
+            observableSlots switchId) = .error err) :
     EvmYul.Yul.exec
-        (fuel + [(0x6057361d, storeBody), (0x2e64cec1, retrieveBody)].length + 12)
+        (fuel + [(0x6057361d, storeBody), (0x2e64cec1, retrieveBody)].length + 13)
         (Backends.lowerNativeSwitchBlock
           Compiler.Proofs.YulGeneration.selectorExpr
           switchId
@@ -520,7 +552,10 @@ private theorem exec_lowerNativeSwitchBlock_simpleStorageSelectors_retrieve_hit_
       (by simp)
       (by norm_num [EvmYul.UInt256.size])
       (simpleStorageSelectors_tagsRange storeBody retrieveBody)
-      hBody
+      (by
+        intro pre suffix hCases
+        simpa [nativeSwitchMarkedPrefixStateForId, nativeSwitchPrefixStateForId]
+          using hBody pre suffix hCases)
 
 private def simpleStorageRetrieveHaltProjectedResult
     (tx : YulTransaction)
@@ -552,8 +587,8 @@ private theorem exec_lowerNativeSwitchBlock_simpleStorageSelectors_retrieve_hit_
     (hBody : ∀ pre suffix,
       [(0x6057361d, storeBody), (0x2e64cec1, retrieveBody)] =
           pre ++ (0x2e64cec1, retrieveBody) :: suffix →
-      EvmYul.Yul.exec ((fuel + 1) + suffix.length + 7)
-        (.Block retrieveBody) (some contract)
+      EvmYul.Yul.execSeq ((fuel + 1) + suffix.length + 6)
+        retrieveBody (some contract)
         (nativeSwitchMarkedPrefixStateForId contract tx storage
           observableSlots switchId) =
           .error (EvmYul.Yul.Exception.YulHalt haltState haltValue))
@@ -563,7 +598,7 @@ private theorem exec_lowerNativeSwitchBlock_simpleStorageSelectors_retrieve_hit_
         simpleStorageRetrieveHaltProjectedResult tx storage initialEvents
           observableSlots haltState) :
       EvmYul.Yul.exec
-          (fuel + [(0x6057361d, storeBody), (0x2e64cec1, retrieveBody)].length + 12)
+          (fuel + [(0x6057361d, storeBody), (0x2e64cec1, retrieveBody)].length + 13)
           (Backends.lowerNativeSwitchBlock
             Compiler.Proofs.YulGeneration.selectorExpr
             switchId
@@ -604,8 +639,8 @@ private theorem exec_lowerNativeSwitchBlock_simpleStorageConcrete_retrieve_hit_p
     (hBody : ∀ pre suffix,
       simpleStorageNativeSelectorCases =
           pre ++ (0x2e64cec1, simpleStorageNativeRetrieveBody) :: suffix →
-      EvmYul.Yul.exec ((fuel + 1) + suffix.length + 7)
-        (.Block simpleStorageNativeRetrieveBody) (some contract)
+      EvmYul.Yul.execSeq ((fuel + 1) + suffix.length + 6)
+        simpleStorageNativeRetrieveBody (some contract)
         (nativeSwitchMarkedPrefixStateForId contract tx storage
           observableSlots switchId) =
           .error (EvmYul.Yul.Exception.YulHalt haltState haltValue))
@@ -615,7 +650,7 @@ private theorem exec_lowerNativeSwitchBlock_simpleStorageConcrete_retrieve_hit_p
         simpleStorageRetrieveHaltProjectedResult tx storage initialEvents
           observableSlots haltState) :
       EvmYul.Yul.exec
-          (fuel + simpleStorageNativeSelectorCases.length + 12)
+          (fuel + simpleStorageNativeSelectorCases.length + 13)
           (Backends.lowerNativeSwitchBlock
             Compiler.Proofs.YulGeneration.selectorExpr
             switchId simpleStorageNativeSelectorCases [nativeRevertZeroZeroStmt])
@@ -983,24 +1018,62 @@ theorem exec_block_lowerStmtsNativeWithSwitchIds_with_leave_ok_eq_of_NativeBlock
     EvmYul.Yul.exec (fuel + suffixLen + native.length + 10)
         (.Block (native ++ [.Leave])) codeOverride initial =
       .ok mid.setLeave := by
+  let rightFuel := fuel + suffixLen + 9
   have hFuel :
       fuel + suffixLen + native.length + 10 =
-        (fuel + suffixLen + 9) + native.length + 1 := by omega
-  have hLeft :
-      EvmYul.Yul.exec ((fuel + suffixLen + 9) + native.length + 1)
-          (.Block native) codeOverride initial = .ok mid := hFuel ▸ hPre
-  have hRight :
-      EvmYul.Yul.exec ((fuel + suffixLen + 9) + 1) (.Block [.Leave])
-          codeOverride mid = .ok mid.setLeave := by
-    have hLeaveFuel :
-        (fuel + suffixLen + 9) + 1 =
-          Nat.succ (Nat.succ (fuel + suffixLen + 8)) := by
-      omega
-    rw [hLeaveFuel]
-    cases mid <;> simp [EvmYul.Yul.exec, EvmYul.Yul.State.setLeave]
-  rw [hFuel]
-  exact exec_block_append_ok (fuel + suffixLen + 9) 1 native [.Leave]
-    codeOverride initial mid mid.setLeave hLeft hRight
+        Nat.succ (rightFuel + native.length) := by
+    dsimp [rightFuel]
+    omega
+  have hPreClosed := hPre
+  rw [hFuel] at hPreClosed
+  simp [EvmYul.Yul.exec] at hPreClosed
+  cases hNative :
+      EvmYul.Yul.execSeq (rightFuel + native.length) native codeOverride
+        initial with
+  | error err =>
+      simp [hNative] at hPreClosed
+  | ok raw =>
+      simp [hNative] at hPreClosed
+      have hRightDirect :
+          EvmYul.Yul.execSeq rightFuel [EvmYul.Yul.Ast.Stmt.Leave]
+              codeOverride raw = .ok raw.setLeave := by
+        have hRightFuel : rightFuel = Nat.succ (fuel + suffixLen + 8) := by
+          omega
+        rw [hRightFuel]
+        cases raw <;>
+          simp [EvmYul.Yul.execSeq, EvmYul.Yul.exec,
+            EvmYul.Yul.State.setLeave, EvmYul.Yul.State.restrictStoreTo]
+      have hRightStop :
+          (match raw with
+          | .Ok _ _ =>
+              EvmYul.Yul.execSeq rightFuel [EvmYul.Yul.Ast.Stmt.Leave]
+                codeOverride raw
+          | .OutOfFuel => .ok raw
+          | .Checkpoint _ => .ok raw) = .ok raw.setLeave := by
+        cases raw <;>
+          simpa [EvmYul.Yul.State.setLeave] using hRightDirect
+      have hSeq :
+          EvmYul.Yul.execSeq (rightFuel + native.length)
+              (native ++ [EvmYul.Yul.Ast.Stmt.Leave]) codeOverride initial =
+            .ok raw.setLeave :=
+        execSeq_append_ok_of_left rightFuel native [EvmYul.Yul.Ast.Stmt.Leave]
+          codeOverride initial raw raw.setLeave hNative hRightDirect hRightStop
+      have hBlock :=
+        exec_block_append_ok (rightFuel + native.length) native
+          [EvmYul.Yul.Ast.Stmt.Leave] codeOverride initial raw.setLeave hSeq
+      have hFinal :
+          raw.setLeave.restrictStoreTo initial.store = mid.setLeave := by
+        rw [← hPreClosed]
+        cases raw with
+        | Ok shared store =>
+            simp [EvmYul.Yul.State.restrictStoreTo, EvmYul.Yul.State.setLeave]
+        | OutOfFuel =>
+            simp [EvmYul.Yul.State.restrictStoreTo, EvmYul.Yul.State.setLeave]
+        | Checkpoint jump =>
+            cases jump <;>
+              simp [EvmYul.Yul.State.restrictStoreTo, EvmYul.Yul.State.setLeave]
+      rw [hFuel]
+      simpa [hFinal] using hBlock
 
 /-- No-leave variant: a `.Block (lower preStmts)` with per-slot preservation
 exits with `.ok mid`, packaged at the standard `+ 10` fuel-padding form so

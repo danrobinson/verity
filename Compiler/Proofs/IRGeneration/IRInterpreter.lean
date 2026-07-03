@@ -5618,17 +5618,25 @@ theorem compileStmt_internalCall_shape
 private theorem internalFunctionYulName_head (name : String) :
     (CompilationModel.internalFunctionYulName name).toList.head? = some 'i' := by
   simp [CompilationModel.internalFunctionYulName, CompilationModel.internalFunctionPrefix]
+  left
   decide
+
+private theorem internalFunctionYulName_ne_head_i (name target : String)
+    (hTargetHead : target.toList.head? ≠ some 'i') :
+    CompilationModel.internalFunctionYulName name ≠ target := by
+  intro hEq
+  have hHead := congrArg (fun s : String => s.toList.head?) hEq
+  change (CompilationModel.internalFunctionYulName name).toList.head? =
+    target.toList.head? at hHead
+  rw [internalFunctionYulName_head name] at hHead
+  exact hTargetHead hHead.symm
 
 private theorem internalFunctionYulName_ne_log (name logName : String)
     (hlogHead : logName.toList.head? = some 'l') :
     CompilationModel.internalFunctionYulName name ≠ logName := by
-  intro hEq
-  have hHead := congrArg (fun s : String => s.toList.head?) hEq
-  change (CompilationModel.internalFunctionYulName name).toList.head? =
-    logName.toList.head? at hHead
-  rw [internalFunctionYulName_head name, hlogHead] at hHead
-  exact nomatch hHead
+  exact internalFunctionYulName_ne_head_i name logName (by
+    rw [hlogHead]
+    decide)
 
 private theorem internalFunctionYulName_isYulLogName_false (name : String) :
     isYulLogName (CompilationModel.internalFunctionYulName name) = false := by
@@ -5730,17 +5738,7 @@ theorem execIRStmtsWithInternals_of_internalCall_compile
       (CompilationModel.internalFunctionYulName functionName)
       argExprs' helper argVals state' hargs hfind
       hstop hsstore hmstore
-      (by
-        intro hEq
-        have hHead := congrArg (fun s => s.toList.head?) hEq
-        simp [CompilationModel.internalFunctionYulName, CompilationModel.internalFunctionPrefix] at hHead
-        cases hHead with
-        | inl h =>
-            have hcontra : (toString "").data.head? ≠ some 't' := by decide
-            exact hcontra h
-        | inr h =>
-            have hcontra : (toString "internal_").data.head? ≠ some 't' := by decide
-            exact hcontra h.2)
+          (internalFunctionYulName_ne_head_i functionName "tstore" (by decide))
       hrevert hreturn
       (internalFunctionYulName_isYulLogName_false functionName)⟩
 

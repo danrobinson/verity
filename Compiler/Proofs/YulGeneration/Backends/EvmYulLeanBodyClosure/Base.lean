@@ -3833,7 +3833,7 @@ theorem compileStmt_rawLog_bridged
       by_cases hLen : topics.length > 4
       · exfalso
         simp only [if_pos hLen, bind, Except.bind] at hOk
-        exact Except.noConfusion hOk
+        cases hOk
       · simp only [if_neg hLen, bind, Except.bind,
                    Pure.pure, Except.pure] at hOk
         cases hTopicsExpr : compileExprListWithInternals fields dynamicSource [] topics with
@@ -3895,7 +3895,7 @@ theorem compileStmt_rawLog_noFuncDefs
       simp only [compileStmt, compileStmtWithFork] at hOk
       by_cases hLen : topics.length > 4
       · simp only [if_pos hLen, bind, Except.bind] at hOk
-        exact Except.noConfusion hOk
+        cases hOk
       · simp only [if_neg hLen, bind, Except.bind,
           Pure.pure, Except.pure] at hOk
         cases hTopicsExpr : compileExprListWithInternals fields dynamicSource [] topics with

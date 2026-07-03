@@ -1052,7 +1052,11 @@ private theorem compileStmt_ok_any_scope_aux
                     (by simp [Stmt.ite.sizeOf_spec] at hlt; omega) ⟨elseIR1, helse1⟩
                   with ⟨elseIR2, helse2⟩
                 simp [compileStmtListWithFork_cancun_eq_compileStmtList, hthen2, helse2]
-                cases elseBranch.isEmpty <;> exact ⟨_, rfl⟩
+                by_cases hEmpty : elseBranch = []
+                · simp [hEmpty]
+                  exact ⟨_, rfl⟩
+                · simp [hEmpty]
+                  exact ⟨_, rfl⟩
       | forEach varName count body =>
           rcases hok with ⟨ir, hir⟩
           simp only [CompilationModel.compileStmt, CompilationModel.compileStmtWithFork, bind, Except.bind] at hir ⊢
@@ -1190,7 +1194,11 @@ private theorem compileStmt_ok_any_scope_with_surface_aux
                     (by simp [Stmt.ite.sizeOf_spec] at hlt; omega) ⟨elseIR1, helse1⟩
                   with ⟨elseIR2, helse2⟩
                 simp [compileStmtListWithFork_cancun_eq_compileStmtList, hthen2, helse2]
-                cases elseBranch.isEmpty <;> exact ⟨_, rfl⟩
+                by_cases hEmpty : elseBranch = []
+                · simp [hEmpty]
+                  exact ⟨_, rfl⟩
+                · simp [hEmpty]
+                  exact ⟨_, rfl⟩
       | forEach varName count body =>
           rcases hok with ⟨ir, hir⟩
           simp only [CompilationModel.compileStmt, CompilationModel.compileStmtWithFork, bind, Except.bind] at hir ⊢

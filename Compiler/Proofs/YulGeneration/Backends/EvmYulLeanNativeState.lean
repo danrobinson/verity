@@ -2190,8 +2190,8 @@ def nativeMappingSlotFunctionDefinition : EvmYul.Yul.Ast.FunctionDefinition :=
         [.Lit (EvmYul.UInt256.ofNat 0), .Var "key"])
     , .ExprStmtCall (.Call (.inl EvmYul.Operation.MSTORE)
         [.Lit (EvmYul.UInt256.ofNat 32), .Var "baseSlot"])
-    , .Let ["slot"] (some (.Call (.inl EvmYul.Operation.KECCAK256)
-        [.Lit (EvmYul.UInt256.ofNat 0), .Lit (EvmYul.UInt256.ofNat 64)]))
+    , .Assign ["slot"] (.Call (.inl EvmYul.Operation.KECCAK256)
+        [.Lit (EvmYul.UInt256.ofNat 0), .Lit (EvmYul.UInt256.ofNat 64)])
     ]
 
 /-- The generated `mappingSlot` helper at scratch base zero lowers to the
@@ -2237,8 +2237,8 @@ def nativeMappingSlotFunctionBody : List EvmYul.Yul.Ast.Stmt :=
       [.Lit (EvmYul.UInt256.ofNat 0), .Var "key"])
   , .ExprStmtCall (.Call (.inl EvmYul.Operation.MSTORE)
       [.Lit (EvmYul.UInt256.ofNat 32), .Var "baseSlot"])
-  , .Let ["slot"] (some (.Call (.inl EvmYul.Operation.KECCAK256)
-      [.Lit (EvmYul.UInt256.ofNat 0), .Lit (EvmYul.UInt256.ofNat 64)]))
+  , .Assign ["slot"] (.Call (.inl EvmYul.Operation.KECCAK256)
+      [.Lit (EvmYul.UInt256.ofNat 0), .Lit (EvmYul.UInt256.ofNat 64)])
   ]
 
 theorem nativeMappingSlotFunctionDefinition_body :

@@ -466,9 +466,12 @@ theorem step_calldatacopy_overarity_invalid
     (mstart rstart size : EvmYul.UInt256) :
     EvmYul.step (τ := .Yul) EvmYul.Operation.RETURNDATACOPY none state
         [mstart, rstart, size] =
-      .ok (state.setMachineState
-        (state.toSharedState.toMachineState.returndatacopy mstart rstart size),
-        none) := by
+      if state.toSharedState.returnData.size < rstart.toNat + size.toNat then
+        .error EvmYul.Yul.Exception.InvalidMemoryAccess
+      else
+        .ok (state.setMachineState
+          (state.toSharedState.toMachineState.returndatacopy mstart rstart size),
+          none) := by
   rfl
 
 theorem step_returndatacopy_nil_invalid
@@ -512,7 +515,9 @@ theorem step_returndatacopy_overarity_invalid
 @[simp] theorem step_stop_ok
     (state : EvmYul.Yul.State) :
     EvmYul.step (τ := .Yul) EvmYul.Operation.STOP none state [] =
-      .error (EvmYul.Yul.Exception.YulHalt state ⟨0⟩) := by
+      .error (EvmYul.Yul.Exception.YulHalt
+        (state.setMachineState (state.toMachineState.setHReturn ByteArray.empty))
+        ⟨0⟩) := by
   rfl
 
 @[simp] theorem step_return_ok
@@ -555,7 +560,7 @@ theorem step_return_overarity_invalid
       match EvmYul.Yul.binaryMachineStateOp EvmYul.MachineState.evmRevert
           state [offset, size] with
       | .error e => .error e
-      | .ok (_, _) => .error EvmYul.Yul.Exception.Revert := by
+      | .ok (s, _) => .error (EvmYul.Yul.Exception.Revert s) := by
   rfl
 
 theorem step_revert_nil_invalid
@@ -2058,52 +2063,93 @@ theorem nativeMappingSlotFunctionDefinition_exec_revivable
   unfold nativeMappingSlotFunctionBody at hExec
   cases fuel with
   | zero =>
-      simp [EvmYul.Yul.exec] at hExec
+              simp [EvmYul.Yul.exec, EvmYul.Yul.execSeq] at hExec
   | succ f1 =>
       cases f1 with
       | zero =>
-          simp [EvmYul.Yul.exec] at hExec
+          simp [EvmYul.Yul.exec, EvmYul.Yul.execSeq] at hExec
       | succ f2 =>
           cases f2 with
           | zero =>
               simp [EvmYul.Yul.exec, EvmYul.Yul.execPrimCall,
                 EvmYul.Yul.evalArgs, EvmYul.Yul.evalTail, EvmYul.Yul.eval,
-                EvmYul.Yul.reverse'] at hExec
+                EvmYul.Yul.evalValues, EvmYul.Yul.head',
+                EvmYul.Yul.reverse', EvmYul.Yul.execSeq] at hExec
           | succ f3 =>
               cases f3 with
               | zero =>
                   simp [EvmYul.Yul.exec, EvmYul.Yul.execPrimCall,
                     EvmYul.Yul.evalArgs, EvmYul.Yul.evalTail, EvmYul.Yul.eval,
-                    EvmYul.Yul.reverse'] at hExec
+                    EvmYul.Yul.evalValues, EvmYul.Yul.head',
+                    EvmYul.Yul.reverse', EvmYul.Yul.execSeq] at hExec
               | succ f4 =>
                   cases f4 with
                   | zero =>
                       simp [EvmYul.Yul.exec, EvmYul.Yul.execPrimCall,
                         EvmYul.Yul.evalArgs, EvmYul.Yul.evalTail,
-                        EvmYul.Yul.eval, EvmYul.Yul.cons',
-                        EvmYul.Yul.reverse'] at hExec
+                        EvmYul.Yul.eval, EvmYul.Yul.evalValues,
+                        EvmYul.Yul.head', EvmYul.Yul.cons',
+                        EvmYul.Yul.reverse', EvmYul.Yul.execSeq] at hExec
                   | succ f5 =>
                       cases f5 with
                       | zero =>
                           simp [EvmYul.Yul.exec, EvmYul.Yul.execPrimCall,
                             EvmYul.Yul.evalArgs, EvmYul.Yul.evalTail,
-                            EvmYul.Yul.eval, EvmYul.Yul.cons',
-                            EvmYul.Yul.reverse'] at hExec
+                            EvmYul.Yul.eval, EvmYul.Yul.evalValues,
+                            EvmYul.Yul.head', EvmYul.Yul.cons',
+                            EvmYul.Yul.reverse', EvmYul.Yul.execSeq] at hExec
+                          cases hKey : store.lookup "key" <;>
+                            simp_all [EvmYul.Yul.State.lookup?,
+                              EvmYul.Yul.execPrimCall, EvmYul.Yul.evalArgs,
+                              EvmYul.Yul.evalTail, EvmYul.Yul.cons',
+                              EvmYul.Yul.reverse']
                       | succ f6 =>
                           cases f6 with
                           | zero =>
                               simp [EvmYul.Yul.exec, EvmYul.Yul.execPrimCall,
                                 EvmYul.Yul.evalArgs, EvmYul.Yul.evalTail,
-                                EvmYul.Yul.eval, EvmYul.Yul.cons',
-                                EvmYul.Yul.reverse'] at hExec
+                                EvmYul.Yul.eval, EvmYul.Yul.evalValues,
+                                EvmYul.Yul.head', EvmYul.Yul.cons',
+                                EvmYul.Yul.reverse', EvmYul.Yul.execSeq] at hExec
+                              cases hKey : store.lookup "key" <;>
+                              cases hBase : store.lookup "baseSlot" <;>
+                              cases hSlot : store.lookup "slot" <;>
+                                simp_all [EvmYul.Yul.State.lookup?,
+                                  EvmYul.Yul.State.setMachineState,
+                                  EvmYul.Yul.execPrimCall,
+                                  EvmYul.Yul.evalArgs, EvmYul.Yul.evalTail,
+                                  EvmYul.Yul.eval, EvmYul.Yul.evalValues,
+                                  EvmYul.Yul.head',
+                                  EvmYul.Yul.cons', EvmYul.Yul.reverse',
+                                  EvmYul.Yul.multifill',
+                                  EvmYul.Yul.checkDeclaration,
+                                  EvmYul.Yul.firstDuplicate?,
+                                  EvmYul.Yul.firstDeclared?]
                           | succ f7 =>
                               cases f7 with
                               | zero =>
                                   simp [EvmYul.Yul.exec, EvmYul.Yul.execPrimCall,
                                     EvmYul.Yul.evalArgs, EvmYul.Yul.evalTail,
-                                    EvmYul.Yul.eval, EvmYul.Yul.cons',
-                                    EvmYul.Yul.reverse', EvmYul.Yul.multifill']
+                                    EvmYul.Yul.eval, EvmYul.Yul.evalValues,
+                                    EvmYul.Yul.head', EvmYul.Yul.cons',
+                                    EvmYul.Yul.reverse', EvmYul.Yul.multifill',
+                                    EvmYul.Yul.execSeq]
                                     at hExec
+                                  cases hKey : store.lookup "key" <;>
+                                  cases hBase : store.lookup "baseSlot" <;>
+                                  cases hSlot : store.lookup "slot" <;>
+                                    simp_all [EvmYul.Yul.State.lookup?,
+                                      EvmYul.Yul.State.setMachineState,
+                                      EvmYul.Yul.State.multifill,
+                                      EvmYul.Yul.execPrimCall,
+                                      EvmYul.Yul.evalArgs, EvmYul.Yul.evalTail,
+                                      EvmYul.Yul.eval, EvmYul.Yul.evalValues,
+                                      EvmYul.Yul.head',
+                                      EvmYul.Yul.cons', EvmYul.Yul.reverse',
+                                      EvmYul.Yul.multifill',
+                                      EvmYul.Yul.checkDeclaration,
+                                      EvmYul.Yul.firstDuplicate?,
+                                      EvmYul.Yul.firstDeclared?]
                               | succ f8 =>
                                   cases f8 with
                                   | zero =>
@@ -2111,22 +2157,125 @@ theorem nativeMappingSlotFunctionDefinition_exec_revivable
                                         EvmYul.Yul.execPrimCall,
                                         EvmYul.Yul.evalArgs,
                                         EvmYul.Yul.evalTail, EvmYul.Yul.eval,
+                                        EvmYul.Yul.evalValues, EvmYul.Yul.head',
                                         EvmYul.Yul.cons', EvmYul.Yul.reverse',
-                                        EvmYul.Yul.multifill'] at hExec
+                                        EvmYul.Yul.multifill',
+                                        EvmYul.Yul.execSeq] at hExec
+                                      cases hKey : store.lookup "key" <;>
+                                      cases hBase : store.lookup "baseSlot" <;>
+                                      cases hSlot : store.lookup "slot" <;>
+                                        simp_all [EvmYul.Yul.State.lookup?,
+                                          EvmYul.Yul.State.setMachineState,
+                                          EvmYul.Yul.State.multifill,
+                                          EvmYul.Yul.execPrimCall,
+                                          EvmYul.Yul.evalArgs,
+                                          EvmYul.Yul.evalTail,
+                                          EvmYul.Yul.eval,
+                                          EvmYul.Yul.evalValues,
+                                          EvmYul.Yul.head',
+                                          EvmYul.Yul.cons',
+                                          EvmYul.Yul.reverse',
+                                          EvmYul.Yul.multifill',
+                                          EvmYul.Yul.checkDeclaration,
+                                          EvmYul.Yul.firstDuplicate?,
+                                          EvmYul.Yul.firstDeclared?]
                                   | succ f9 =>
                                       simp [EvmYul.Yul.exec,
                                         EvmYul.Yul.execPrimCall,
                                         EvmYul.Yul.evalArgs,
                                         EvmYul.Yul.evalTail, EvmYul.Yul.eval,
+                                        EvmYul.Yul.evalValues, EvmYul.Yul.head',
                                         EvmYul.Yul.cons', EvmYul.Yul.reverse',
                                         EvmYul.Yul.multifill',
+                                        EvmYul.Yul.execSeq,
                                         EvmYul.Yul.State.multifill,
                                         EvmYul.Yul.State.setMachineState,
                                         EvmYul.Yul.State.lookup!,
                                         EvmYul.Yul.State.insert,
                                         EvmYul.Yul.State.reviveJump] at hExec ⊢
-                                      subst calleeState
-                                      simp [EvmYul.Yul.State.reviveJump]
+                                      cases hKey : store.lookup "key" <;>
+                                      cases hBase : store.lookup "baseSlot" <;>
+                                      cases hSlot : store.lookup "slot" <;>
+                                      cases f9 with
+                                      | zero =>
+                                          simp_all [EvmYul.Yul.State.lookup?,
+                                            EvmYul.Yul.State.setMachineState,
+                                            EvmYul.Yul.State.multifill,
+                                            EvmYul.Yul.execPrimCall,
+                                            EvmYul.Yul.evalArgs,
+                                            EvmYul.Yul.evalTail,
+                                            EvmYul.Yul.eval,
+                                            EvmYul.Yul.evalValues,
+                                            EvmYul.Yul.head',
+                                            EvmYul.Yul.cons',
+                                            EvmYul.Yul.reverse',
+                                            EvmYul.Yul.multifill',
+                                            EvmYul.Yul.checkDeclaration,
+                                            EvmYul.Yul.checkAssignment,
+                                            EvmYul.Yul.firstDuplicate?,
+                                            EvmYul.Yul.firstDeclared?,
+                                            EvmYul.Yul.firstUndeclared?,
+                                            EvmYul.Yul.State.reviveJump]
+                                      | succ f10 =>
+                                          cases f10 with
+                                          | zero =>
+                                              simp_all [EvmYul.Yul.State.lookup?,
+                                                EvmYul.Yul.State.setMachineState,
+                                                EvmYul.Yul.State.multifill,
+                                                EvmYul.Yul.execPrimCall,
+                                                EvmYul.Yul.evalArgs,
+                                                EvmYul.Yul.evalTail,
+                                                EvmYul.Yul.eval,
+                                                EvmYul.Yul.evalValues,
+                                                EvmYul.Yul.head',
+                                                EvmYul.Yul.cons',
+                                                EvmYul.Yul.reverse',
+                                                EvmYul.Yul.multifill',
+                                                EvmYul.Yul.checkDeclaration,
+                                                EvmYul.Yul.checkAssignment,
+                                                EvmYul.Yul.firstDuplicate?,
+                                                EvmYul.Yul.firstDeclared?,
+                                                EvmYul.Yul.firstUndeclared?,
+                                                EvmYul.Yul.State.reviveJump]
+                                          | succ f11 =>
+                                              simp_all [EvmYul.Yul.State.lookup?,
+                                                EvmYul.Yul.State.setMachineState,
+                                                EvmYul.Yul.State.multifill,
+                                                EvmYul.Yul.execPrimCall,
+                                                EvmYul.Yul.evalArgs,
+                                                EvmYul.Yul.evalTail,
+                                                EvmYul.Yul.eval,
+                                                EvmYul.Yul.evalValues,
+                                                EvmYul.Yul.head',
+                                                EvmYul.Yul.cons',
+                                                EvmYul.Yul.reverse',
+                                                EvmYul.Yul.multifill',
+                                                EvmYul.Yul.checkDeclaration,
+                                                EvmYul.Yul.checkAssignment,
+                                                EvmYul.Yul.firstDuplicate?,
+                                                EvmYul.Yul.firstDeclared?,
+                                                EvmYul.Yul.firstUndeclared?,
+                                                EvmYul.Yul.State.reviveJump]
+                                              try
+                                                symm at hExec
+                                                subst calleeState
+                                                simp [EvmYul.Yul.State.restrictStoreTo,
+                                                  EvmYul.Yul.State.reviveJump]
+  all_goals
+    cases hKey : store.lookup "key" <;>
+    cases hBase : store.lookup "baseSlot" <;>
+    cases hSlot : store.lookup "slot" <;>
+    repeat (split at hExec)
+    simp_all [EvmYul.Yul.execPrimCall,
+      EvmYul.Yul.evalArgs, EvmYul.Yul.evalTail, EvmYul.Yul.eval,
+      EvmYul.Yul.evalValues, EvmYul.Yul.head', EvmYul.Yul.cons',
+      EvmYul.Yul.reverse', EvmYul.Yul.multifill',
+      EvmYul.Yul.State.multifill, EvmYul.Yul.State.setMachineState,
+      EvmYul.Yul.State.lookup?, EvmYul.Yul.State.lookup!,
+      EvmYul.Yul.State.insert, EvmYul.Yul.checkDeclaration,
+      EvmYul.Yul.checkAssignment, EvmYul.Yul.firstDuplicate?,
+      EvmYul.Yul.firstDeclared?, EvmYul.Yul.firstUndeclared?,
+      EvmYul.Yul.State.reviveJump]
 
 @[simp] theorem primCall_log0_ok
     (fuel : Nat)
@@ -2254,10 +2403,15 @@ theorem nativeMappingSlotFunctionDefinition_exec_revivable
     (mstart rstart size : EvmYul.UInt256) :
     EvmYul.Yul.primCall (fuel + 1) state
         EvmYul.Operation.RETURNDATACOPY [mstart, rstart, size] =
-      .ok (state.setMachineState
-        (state.toSharedState.toMachineState.returndatacopy mstart rstart size),
-        []) := by
-  cases fuel <;> simp [EvmYul.Yul.primCall]
+      if state.toSharedState.returnData.size < rstart.toNat + size.toNat then
+        .error EvmYul.Yul.Exception.InvalidMemoryAccess
+      else
+        .ok (state.setMachineState
+          (state.toSharedState.toMachineState.returndatacopy mstart rstart size),
+          []) := by
+  cases fuel <;>
+    by_cases hBounds : state.toSharedState.returnData.size < rstart.toNat + size.toNat <;>
+      simp [EvmYul.Yul.primCall, hBounds]
 
 @[simp] theorem primCall_pop_ok
     (fuel : Nat)
@@ -2271,7 +2425,9 @@ theorem nativeMappingSlotFunctionDefinition_exec_revivable
     (fuel : Nat)
     (state : EvmYul.Yul.State) :
     EvmYul.Yul.primCall (fuel + 1) state EvmYul.Operation.STOP [] =
-      .error (EvmYul.Yul.Exception.YulHalt state ⟨0⟩) := by
+      .error (EvmYul.Yul.Exception.YulHalt
+        (state.setMachineState (state.toMachineState.setHReturn ByteArray.empty))
+        ⟨0⟩) := by
   cases fuel <;> simp [EvmYul.Yul.primCall]
 
 @[simp] theorem primCall_return_ok
@@ -2299,7 +2455,7 @@ theorem nativeMappingSlotFunctionDefinition_exec_revivable
       match EvmYul.Yul.binaryMachineStateOp EvmYul.MachineState.evmRevert
           state [offset, size] with
       | .error e => .error e
-      | .ok (_, _) => .error EvmYul.Yul.Exception.Revert := by
+      | .ok (s, _) => .error (EvmYul.Yul.Exception.Revert s) := by
   cases fuel <;> simp [EvmYul.Yul.primCall]
   all_goals
     cases EvmYul.Yul.binaryMachineStateOp EvmYul.MachineState.evmRevert
@@ -2324,11 +2480,15 @@ theorem exec_revert_zero_zero_error
     (codeOverride : Option EvmYul.Yul.Ast.YulContract) :
     EvmYul.Yul.exec (fuel + 6)
       nativeRevertZeroZeroStmt codeOverride state =
-      .error EvmYul.Yul.Exception.Revert := by
+      .error (EvmYul.Yul.Exception.Revert
+        (state.setMachineState
+          (state.toMachineState.evmRevert
+            (EvmYul.UInt256.ofNat 0) (EvmYul.UInt256.ofNat 0)))) := by
   cases fuel <;>
-    simp [nativeRevertZeroZeroStmt, EvmYul.Yul.exec, EvmYul.Yul.eval, EvmYul.Yul.evalArgs,
-      EvmYul.Yul.evalTail, EvmYul.Yul.execPrimCall, EvmYul.Yul.reverse',
-      EvmYul.Yul.cons', EvmYul.Yul.multifill',
+    simp [nativeRevertZeroZeroStmt, EvmYul.Yul.exec, EvmYul.Yul.eval,
+      EvmYul.Yul.evalValues, EvmYul.Yul.head', EvmYul.Yul.evalArgs,
+      EvmYul.Yul.evalTail, EvmYul.Yul.execPrimCall, EvmYul.Yul.primCall,
+      EvmYul.Yul.reverse', EvmYul.Yul.cons', EvmYul.Yul.multifill',
       EvmYul.Yul.binaryMachineStateOp]
 
 theorem exec_expr_prim_ok
@@ -2364,14 +2524,20 @@ theorem exec_let_prim_one_ok
         .ok (state, values.reverse))
     (hPrim :
       EvmYul.Yul.primCall fuel state op values = .ok (next, [value])) :
-    EvmYul.Yul.exec (fuel + 1)
+    EvmYul.Yul.exec (fuel + 2)
         (.Let [name] (some (.Call (Sum.inl op) args))) none state =
-      .ok (next.insert name value) := by
-  simp [EvmYul.Yul.exec]
-  rw [hEval]
-  simp [EvmYul.Yul.reverse', EvmYul.Yul.execPrimCall, hPrim,
-    EvmYul.Yul.multifill']
-  cases next <;> rfl
+      match EvmYul.Yul.checkDeclaration state [name] with
+      | .error e => .error e
+      | .ok () => .ok (next.insert name value) := by
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hPrim
+  | succ fuel' =>
+      simp [EvmYul.Yul.exec]
+      cases hDecl : EvmYul.Yul.checkDeclaration state [name] <;> simp [hDecl]
+      simp [EvmYul.Yul.evalValues, hEval, EvmYul.Yul.reverse', hPrim,
+        EvmYul.Yul.multifill']
+      cases next <;> rfl
 
 
 end Compiler.Proofs.YulGeneration.Backends.Native

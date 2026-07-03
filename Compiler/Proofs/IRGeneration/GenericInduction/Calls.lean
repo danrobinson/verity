@@ -964,75 +964,47 @@ theorem stmtListDirectInternalHelperStepInterfaces_of_headStepCatalog
         (stmts := fn.body)
         hcatalog.assign
 
+private theorem internalFunctionYulName_head (name : String) :
+    (CompilationModel.internalFunctionYulName name).toList.head? = some 'i' := by
+  simp [CompilationModel.internalFunctionYulName,
+    CompilationModel.internalFunctionPrefix]
+  left
+  decide
+
+private theorem internalFunctionYulName_ne_head_i (name target : String)
+    (hTargetHead : target.toList.head? ≠ some 'i') :
+    CompilationModel.internalFunctionYulName name ≠ target := by
+  intro hEq
+  have hHead := congrArg (fun s : String => s.toList.head?) hEq
+  change (CompilationModel.internalFunctionYulName name).toList.head? =
+    target.toList.head? at hHead
+  rw [internalFunctionYulName_head name] at hHead
+  exact hTargetHead hHead.symm
+
 private theorem internalFunctionYulName_ne_stop
     (calleeName : String) :
-    CompilationModel.internalFunctionYulName calleeName ≠ "stop" := by
-  intro hEq
-  have hHead := congrArg (fun s => s.toList.head?) hEq
-  simp [CompilationModel.internalFunctionYulName, CompilationModel.internalFunctionPrefix] at hHead
-  cases hHead with
-  | inl h =>
-      have hcontra : (toString "").data.head? ≠ some 's' := by decide
-      exact hcontra h
-  | inr h =>
-      have hcontra : (toString "internal_").data.head? ≠ some 's' := by decide
-      exact hcontra h.2
+    CompilationModel.internalFunctionYulName calleeName ≠ "stop" :=
+  internalFunctionYulName_ne_head_i calleeName "stop" (by decide)
 
 private theorem internalFunctionYulName_ne_sstore
     (calleeName : String) :
-    CompilationModel.internalFunctionYulName calleeName ≠ "sstore" := by
-  intro hEq
-  have hHead := congrArg (fun s => s.toList.head?) hEq
-  simp [CompilationModel.internalFunctionYulName, CompilationModel.internalFunctionPrefix] at hHead
-  cases hHead with
-  | inl h =>
-      have hcontra : (toString "").data.head? ≠ some 's' := by decide
-      exact hcontra h
-  | inr h =>
-      have hcontra : (toString "internal_").data.head? ≠ some 's' := by decide
-      exact hcontra h.2
+    CompilationModel.internalFunctionYulName calleeName ≠ "sstore" :=
+  internalFunctionYulName_ne_head_i calleeName "sstore" (by decide)
 
 private theorem internalFunctionYulName_ne_mstore
     (calleeName : String) :
-    CompilationModel.internalFunctionYulName calleeName ≠ "mstore" := by
-  intro hEq
-  have hHead := congrArg (fun s => s.toList.head?) hEq
-  simp [CompilationModel.internalFunctionYulName, CompilationModel.internalFunctionPrefix] at hHead
-  cases hHead with
-  | inl h =>
-      have hcontra : (toString "").data.head? ≠ some 'm' := by decide
-      exact hcontra h
-  | inr h =>
-      have hcontra : (toString "internal_").data.head? ≠ some 'm' := by decide
-      exact hcontra h.2
+    CompilationModel.internalFunctionYulName calleeName ≠ "mstore" :=
+  internalFunctionYulName_ne_head_i calleeName "mstore" (by decide)
 
 private theorem internalFunctionYulName_ne_revert
     (calleeName : String) :
-    CompilationModel.internalFunctionYulName calleeName ≠ "revert" := by
-  intro hEq
-  have hHead := congrArg (fun s => s.toList.head?) hEq
-  simp [CompilationModel.internalFunctionYulName, CompilationModel.internalFunctionPrefix] at hHead
-  cases hHead with
-  | inl h =>
-      have hcontra : (toString "").data.head? ≠ some 'r' := by decide
-      exact hcontra h
-  | inr h =>
-      have hcontra : (toString "internal_").data.head? ≠ some 'r' := by decide
-      exact hcontra h.2
+    CompilationModel.internalFunctionYulName calleeName ≠ "revert" :=
+  internalFunctionYulName_ne_head_i calleeName "revert" (by decide)
 
 private theorem internalFunctionYulName_ne_return
     (calleeName : String) :
-    CompilationModel.internalFunctionYulName calleeName ≠ "return" := by
-  intro hEq
-  have hHead := congrArg (fun s => s.toList.head?) hEq
-  simp [CompilationModel.internalFunctionYulName, CompilationModel.internalFunctionPrefix] at hHead
-  cases hHead with
-  | inl h =>
-      have hcontra : (toString "").data.head? ≠ some 'r' := by decide
-      exact hcontra h
-  | inr h =>
-      have hcontra : (toString "internal_").data.head? ≠ some 'r' := by decide
-      exact hcontra h.2
+    CompilationModel.internalFunctionYulName calleeName ≠ "return" :=
+  internalFunctionYulName_ne_head_i calleeName "return" (by decide)
 
 /-- Runtime-helper-table packaged version of
 `execIRStmtsWithInternals_of_internalCallAssign_compile`: the caller no longer

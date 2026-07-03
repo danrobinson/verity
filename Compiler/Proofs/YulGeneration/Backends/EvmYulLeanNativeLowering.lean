@@ -129,12 +129,11 @@ def lowerExprNative : YulExpr → EvmYul.Yul.Ast.Expr
       .Call (.inr func) (args.map lowerExprNative) := by
   simp [lowerExprNative, hOp]
 
-/-- EVMYulLean's Yul AST represents both declaration-style bindings and
-    reassignment-style bindings with `Stmt.Let`; its interpreter updates the
-    `VarStore` by inserting the target name, replacing any previous binding.
-    Keep this helper named so the native assignment boundary is explicit. -/
+/-- Lower a source assignment to EVMYulLean's assignment form. Current
+    EVMYulLean distinguishes declarations (`Let`) from updates (`Assign`), so
+    this helper targets an already-declared Yul variable. -/
 def lowerAssignNative (name : String) (value : YulExpr) : EvmYul.Yul.Ast.Stmt :=
-  .Let [name] (some (lowerExprNative value))
+  .Assign [name] (lowerExprNative value)
 
 /-- Build a native EVMYulLean primitive call expression.
 
@@ -227,6 +226,7 @@ mutual
 def nativeStmtWriteNames : EvmYul.Yul.Ast.Stmt → List String
   | .Block stmts => nativeStmtsWriteNames stmts
   | .Let names _ => names
+  | .Assign names _ => names
   | .ExprStmtCall _ | .Continue | .Break | .Leave => []
   | .Switch _ cases defaultBody =>
       nativeSwitchCasesWriteNames cases ++ nativeStmtsWriteNames defaultBody
