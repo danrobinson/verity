@@ -21483,8 +21483,21 @@ def NativeGeneratedSelectorHitSuccessBridge
     fn.params.length ≤ tx.args.length →
     nativeResultsMatchOn observableSlots
       (interpretIR irContract tx state)
-      (nativeGeneratedCallDispatcherResultOf irContract tx state
-        observableSlots nativeContract)
+        (nativeGeneratedCallDispatcherResultOf irContract tx state
+          observableSlots nativeContract)
+
+private def NativeGeneratedLoweredSwitchCases
+    (irContract : IRContract)
+    (reservedNames : List String)
+    (n0 : Nat)
+    (cases' : List (Nat × List EvmYul.Yul.Ast.Stmt)) : Prop :=
+  ∃ midN,
+    Compiler.Proofs.YulGeneration.Backends.lowerSwitchCasesNativeWithSwitchIds
+      reservedNames
+      (Compiler.Proofs.YulGeneration.Backends.freshNativeSwitchId
+        reservedNames n0 + 1)
+      (Compiler.Proofs.YulGeneration.Backends.Native.buildSwitchSourceCases
+        irContract.functions) = .ok (cases', midN)
 
 /-- Body-level selector-hit bridge target for generated native dispatchers.
 
@@ -21508,6 +21521,7 @@ private def NativeGeneratedSelectorHitBodyBridge
         (Compiler.emitYul irContract).runtimeCode = .ok nativeContract →
     irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
         some fn →
+    NativeGeneratedLoweredSwitchCases irContract reservedNames n0 cases' →
     cases'.find? (fun entry => entry.1 == tx.functionSelector) =
         some (tx.functionSelector, body') →
     Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds
@@ -21577,6 +21591,7 @@ private def NativeGeneratedSelectorHitUserBodyBridge
         (Compiler.emitYul irContract).runtimeCode = .ok nativeContract →
     irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
         some fn →
+    NativeGeneratedLoweredSwitchCases irContract reservedNames n0 cases' →
     cases'.find? (fun entry => entry.1 == tx.functionSelector) =
         some (tx.functionSelector, body') →
     Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds
@@ -21650,6 +21665,7 @@ private def NativeGeneratedSelectorHitUserBodyBridgeAtFuel
         (Compiler.emitYul irContract).runtimeCode = .ok nativeContract →
     irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
         some fn →
+    NativeGeneratedLoweredSwitchCases irContract reservedNames n0 cases' →
     cases'.find? (fun entry => entry.1 == tx.functionSelector) =
         some (tx.functionSelector, body') →
     Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds
@@ -21712,6 +21728,7 @@ private def NativeGeneratedSelectorHitUserBodyBridgeAtFuelRestored
         (Compiler.emitYul irContract).runtimeCode = .ok nativeContract →
     irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
         some fn →
+    NativeGeneratedLoweredSwitchCases irContract reservedNames n0 cases' →
     cases'.find? (fun entry => entry.1 == tx.functionSelector) =
         some (tx.functionSelector, body') →
     Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds
@@ -21787,6 +21804,7 @@ private def NativeGeneratedSelectorHitUserBodyBridgeAtFuelRevived
         (Compiler.emitYul irContract).runtimeCode = .ok nativeContract →
     irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
         some fn →
+    NativeGeneratedLoweredSwitchCases irContract reservedNames n0 cases' →
     cases'.find? (fun entry => entry.1 == tx.functionSelector) =
         some (tx.functionSelector, body') →
     Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds
@@ -21855,6 +21873,7 @@ private def NativeGeneratedSelectorHitUserBodyExecBridgeAtFuelRevived
         (Compiler.emitYul irContract).runtimeCode = .ok nativeContract →
     irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
         some fn →
+    NativeGeneratedLoweredSwitchCases irContract reservedNames n0 cases' →
     cases'.find? (fun entry => entry.1 == tx.functionSelector) =
         some (tx.functionSelector, body') →
     Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds
@@ -21931,6 +21950,7 @@ private def NativeGeneratedSelectorHitUserBodyExecBridgeAtFuelRevivedLeaveAware
         (Compiler.emitYul irContract).runtimeCode = .ok nativeContract →
     irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
         some fn →
+    NativeGeneratedLoweredSwitchCases irContract reservedNames n0 cases' →
     cases'.find? (fun entry => entry.1 == tx.functionSelector) =
         some (tx.functionSelector, body') →
     Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds
@@ -22009,6 +22029,7 @@ private def NativeGeneratedSelectorHitUserBodyExecOnlyBridgeAtFuelRevived
         (Compiler.emitYul irContract).runtimeCode = .ok nativeContract →
     irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
         some fn →
+    NativeGeneratedLoweredSwitchCases irContract reservedNames n0 cases' →
     cases'.find? (fun entry => entry.1 == tx.functionSelector) =
         some (tx.functionSelector, body') →
     Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds
@@ -22658,6 +22679,7 @@ private def NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived
         (Compiler.emitYul irContract).runtimeCode = .ok nativeContract →
     irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
         some fn →
+    NativeGeneratedLoweredSwitchCases irContract reservedNames n0 cases' →
     Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds
         reservedNames userBodyStart fn.body =
           .ok (bodyNative, bodyEnd) →
@@ -22752,7 +22774,7 @@ private theorem NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_em
     NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived irContract tx
       state observableSlots := by
   intro nativeContract fn reservedNames n0 cases' bodyNative bodyEnd
-    userBodyStart _hLowerRuntime hFind hUserBodyLower _hguards _hArgs
+    userBodyStart _hLowerRuntime hFind _hLowerCases hUserBodyLower _hguards _hArgs
   have hBody : fn.body = [] := hEmpty fn hFind
   simp [hBody] at hUserBodyLower
   rcases hUserBodyLower with ⟨rfl, _rfl⟩
@@ -22950,7 +22972,7 @@ private theorem NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_le
     NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived irContract tx
       state observableSlots := by
   intro nativeContract fn reservedNames n0 cases' bodyNative bodyEnd
-    userBodyStart _hLowerRuntime hFind hUserBodyLower _hguards _hArgs
+    userBodyStart _hLowerRuntime hFind _hLowerCases hUserBodyLower _hguards _hArgs
   have hBody : fn.body = [.leave] := hLeave fn hFind
   rw [hBody] at hUserBodyLower
   simp [Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds_cons] at hUserBodyLower
@@ -23017,7 +23039,7 @@ private theorem NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_le
     NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived irContract tx
       state observableSlots := by
   intro nativeContract fn reservedNames n0 cases' bodyNative bodyEnd
-    userBodyStart _hLowerRuntime hFind hUserBodyLower _hguards _hArgs
+    userBodyStart _hLowerRuntime hFind _hLowerCases hUserBodyLower _hguards _hArgs
   have hBody : fn.body = [.block [], .leave] := hLabelLeave fn hFind
   rw [hBody] at hUserBodyLower
   simp [Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds_cons,
@@ -23224,7 +23246,7 @@ private theorem NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_bl
     NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived irContract tx
       state observableSlots := by
   intro nativeContract fn reservedNames n0 cases' bodyNative bodyEnd
-    userBodyStart _hLowerRuntime hFind hUserBodyLower _hguards _hArgs
+    userBodyStart _hLowerRuntime hFind _hLowerCases hUserBodyLower _hguards _hArgs
   have hBody : fn.body = [.block [.leave]] := hBlockLeave fn hFind
   rw [hBody] at hUserBodyLower
   simp [Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds_cons,
@@ -23296,7 +23318,7 @@ private theorem NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_bl
     NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived irContract tx
       state observableSlots := by
   intro nativeContract fn reservedNames n0 cases' bodyNative bodyEnd
-    userBodyStart _hLowerRuntime hFind hUserBodyLower _hguards _hArgs
+    userBodyStart _hLowerRuntime hFind _hLowerCases hUserBodyLower _hguards _hArgs
   have hBody : fn.body = [.block [], .block [.leave]] := hLabelBlockLeave fn hFind
   rw [hBody] at hUserBodyLower
   simp [Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds_cons,
@@ -23418,7 +23440,7 @@ private theorem NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_bl
     NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived irContract tx
       state observableSlots := by
   intro nativeContract fn reservedNames n0 cases' bodyNative bodyEnd
-    userBodyStart _hLowerRuntime hFind hUserBodyLower _hguards _hArgs
+    userBodyStart _hLowerRuntime hFind _hLowerCases hUserBodyLower _hguards _hArgs
   have hBody : fn.body = [.block []] := hBlockEmpty fn hFind
   rw [hBody] at hUserBodyLower
   simp [Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds_cons,
@@ -23529,7 +23551,7 @@ private theorem NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_bl
     NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived irContract tx
       state observableSlots := by
   intro nativeContract fn reservedNames n0 cases' bodyNative bodyEnd
-    userBodyStart _hLowerRuntime hFind hUserBodyLower _hguards _hArgs
+    userBodyStart _hLowerRuntime hFind _hLowerCases hUserBodyLower _hguards _hArgs
   have hBody : fn.body = [.block [], .block []] := hLabelBlockEmpty fn hFind
   rw [hBody] at hUserBodyLower
   simp [Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds_cons,
@@ -23832,7 +23854,7 @@ private theorem NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_bl
     NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived irContract tx
       state observableSlots := by
   intro nativeContract fn reservedNames n0 cases' bodyNative bodyEnd
-    userBodyStart _hLowerRuntime hFind hUserBodyLower _hguards _hArgs
+    userBodyStart _hLowerRuntime hFind _hLowerCases hUserBodyLower _hguards _hArgs
   have hBody : fn.body = List.replicate n (Yul.YulStmt.block []) :=
     hBlocks fn hFind
   rw [hBody] at hUserBodyLower
@@ -24196,7 +24218,7 @@ private theorem NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_si
     NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived irContract tx
       state observableSlots := by
   intro nativeContract fn reservedNames n0 cases' bodyNative bodyEnd
-    userBodyStart _hLowerRuntime hFind hUserBodyLower _hguards _hArgs
+    userBodyStart _hLowerRuntime hFind _hLowerCases hUserBodyLower _hguards _hArgs
   obtain ⟨text, hBody⟩ := hComment fn hFind
   rw [hBody] at hUserBodyLower
   rcases Compiler.Proofs.YulGeneration.Backends.Native.lowerStmtsNativeWithSwitchIds_comment_head_eq
@@ -25329,7 +25351,10 @@ private theorem NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_li
         ∃ bindings : List (String × Nat),
           fn.body =
             NativeGeneratedSelectedUserBodyLiteralLetBindings.toBody bindings ∧
-          (∀ (cases' suffix : List (Nat × List EvmYul.Yul.Ast.Stmt)),
+          (∀ (reservedNames : List String) (n0 : Nat)
+              (cases' suffix : List (Nat × List EvmYul.Yul.Ast.Stmt)),
+            NativeGeneratedLoweredSwitchCases irContract reservedNames n0
+              cases' →
             bindings.length + 2 ≤
               nativeGeneratedSelectorHitUserBodyFuel irContract fn cases' +
                 suffix.length + 9) ∧
@@ -25346,7 +25371,8 @@ private theorem NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_li
     NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived irContract tx
       state observableSlots := by
   intro nativeContract fn reservedNames n0 cases' bodyNative bodyEnd
-    userBodyStart _hLowerRuntime hFind hUserBodyLower _hguards _hArgs
+    userBodyStart _hLowerRuntime hFind hLowerCases hUserBodyLower _hguards
+    _hArgs
   obtain ⟨bindings, hBody, hFuel, hFresh⟩ := hLetBindings fn hFind
   rw [hBody] at hUserBodyLower
   rw [NativeGeneratedSelectedUserBodyLiteralLetBindings.lowerStmtsNativeWithSwitchIds_toBody]
@@ -25390,7 +25416,7 @@ private theorem NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_li
       (.ok (final.reviveJump, []))
   refine ⟨final, nativeYul, entryShared, finalStore, ?_, ?_, rfl, ?_⟩
   · intro _pre suffix
-    have hFuelBound := hFuel cases' suffix
+    have hFuelBound := hFuel reservedNames n0 cases' suffix hLowerCases
     have hExec :=
       NativeGeneratedSelectedUserBodyLiteralLetBindings.execSeq_toNativeBody_ok_of_targetsFreshFrom
         (nativeGeneratedSelectorHitUserBodyFuel irContract fn cases' +
@@ -25423,7 +25449,7 @@ private theorem NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_si
     NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived irContract tx
       state observableSlots := by
   intro nativeContract fn reservedNames n0 cases' bodyNative bodyEnd
-    userBodyStart _hLowerRuntime hFind hUserBodyLower _hguards _hArgs
+    userBodyStart _hLowerRuntime hFind _hLowerCases hUserBodyLower _hguards _hArgs
   obtain ⟨target, assigned, hBody, hFresh⟩ := hLetLit fn hFind
   rw [hBody] at hUserBodyLower
   simp [Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds_cons,
@@ -25524,7 +25550,7 @@ private theorem NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_tw
     NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived irContract tx
       state observableSlots := by
   intro nativeContract fn reservedNames n0 cases' bodyNative bodyEnd
-    userBodyStart _hLowerRuntime hFind hUserBodyLower _hguards _hArgs
+    userBodyStart _hLowerRuntime hFind _hLowerCases hUserBodyLower _hguards _hArgs
   obtain ⟨target0, assigned0, target1, assigned1, hBody, hFresh⟩ :=
     hLetLit fn hFind
   rw [hBody] at hUserBodyLower
@@ -25672,7 +25698,7 @@ private theorem NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_th
     NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived irContract tx
       state observableSlots := by
   intro nativeContract fn reservedNames n0 cases' bodyNative bodyEnd
-    userBodyStart _hLowerRuntime hFind hUserBodyLower _hguards _hArgs
+    userBodyStart _hLowerRuntime hFind _hLowerCases hUserBodyLower _hguards _hArgs
   obtain ⟨target0, assigned0, target1, assigned1, target2, assigned2, hBody,
     hFresh⟩ := hLetLit fn hFind
   rw [hBody] at hUserBodyLower
@@ -26105,11 +26131,11 @@ private theorem NativeGeneratedSelectorHitUserBodyExecOnlyBridgeAtFuelRevived.of
     NativeGeneratedSelectorHitUserBodyExecOnlyBridgeAtFuelRevived irContract tx
       state observableSlots := by
   intro nativeContract fn reservedNames n0 cases' body' bodyNative bodyStart
-    bodyEnd userBodyStart hLowerRuntime hFind hCase hBodyLower hUserBodyLower
-    hguards hArgs
+    bodyEnd userBodyStart hLowerRuntime hFind hLowerCases hCase hBodyLower
+    hUserBodyLower hguards hArgs
   rcases hBridge nativeContract fn reservedNames n0 cases' body' bodyNative
-      bodyStart bodyEnd userBodyStart hLowerRuntime hFind hCase hBodyLower
-      hUserBodyLower hguards hArgs with
+      bodyStart bodyEnd userBodyStart hLowerRuntime hFind hLowerCases hCase
+      hBodyLower hUserBodyLower hguards hArgs with
     ⟨final, nativeYul, shared, store, hBody, _hPreserves, hRevive, hProject,
       hMatch⟩
   exact ⟨final, nativeYul, shared, store, hBody, hRevive, hProject, hMatch⟩
@@ -26127,46 +26153,16 @@ private theorem NativeGeneratedSelectorHitUserBodyExecOnlyBridgeAtFuelRevived.of
     NativeGeneratedSelectorHitUserBodyExecOnlyBridgeAtFuelRevived irContract tx
       state observableSlots := by
   intro nativeContract fn reservedNames n0 cases' body' bodyNative bodyStart
-    bodyEnd userBodyStart hLowerRuntime hFind _hCase _hBodyLower hUserBodyLower
-    hguards hArgs
+    bodyEnd userBodyStart hLowerRuntime hFind hLowerCases _hCase _hBodyLower
+    hUserBodyLower hguards hArgs
   unfold NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived at hBridge
   rcases hBridge nativeContract fn reservedNames n0 cases' bodyNative bodyEnd
-      userBodyStart hLowerRuntime hFind hUserBodyLower hguards hArgs with
+      userBodyStart hLowerRuntime hFind hLowerCases hUserBodyLower hguards
+      hArgs with
     ⟨final, nativeYul, shared, store, hBody, hRevive, hProject, hMatch⟩
   refine ⟨final, nativeYul, shared, store, ?_, hRevive, hProject, hMatch⟩
   intro pre suffix _hCases
   exact hBody pre suffix
-
-/-- Project the dispatcher-local preservation half out of the existing
-all-in-one selected user-body ExecBridge. -/
-private theorem NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuel.of_exec_bridge
-    (irContract : IRContract)
-    (tx : IRTransaction)
-    (state : IRState)
-    (observableSlots : List Nat)
-    (hBridge :
-      NativeGeneratedSelectorHitUserBodyExecBridgeAtFuelRevived irContract tx
-        state observableSlots)
-    (hguards :
-      ∀ fn,
-        irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
-          some fn →
-        DispatchGuardsSafe fn tx)
-    (hArgs :
-      ∀ fn,
-        irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
-          some fn →
-        fn.params.length ≤ tx.args.length) :
-    NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuel irContract tx := by
-  intro nativeContract fn reservedNames n0 cases' body' bodyNative bodyStart
-    bodyEnd userBodyStart hLowerRuntime hFind hCase hBodyLower hUserBodyLower
-    pre suffix hCases
-  rcases hBridge nativeContract fn reservedNames n0 cases' body' bodyNative
-      bodyStart bodyEnd userBodyStart hLowerRuntime hFind hCase hBodyLower
-      hUserBodyLower (hguards fn hFind) (hArgs fn hFind) with
-    ⟨_final, _nativeYul, _shared, _store, _hBody, hPreserves, _hRevive,
-      _hProject, _hMatch⟩
-  exact hPreserves pre suffix hCases
 
 /-- Build the selected user-body preservation bridge from local no-write and
 per-statement preservation facts for the lowered native body. -/
@@ -27437,11 +27433,11 @@ private theorem NativeGeneratedSelectorHitUserBodyExecBridgeAtFuelRevived.of_exe
     NativeGeneratedSelectorHitUserBodyExecBridgeAtFuelRevived irContract tx
       state observableSlots := by
   intro nativeContract fn reservedNames n0 cases' body' bodyNative bodyStart
-    bodyEnd userBodyStart hLowerRuntime hFind hCase hBodyLower hUserBodyLower
-    hguards hArgs
+    bodyEnd userBodyStart hLowerRuntime hFind hLowerCases hCase hBodyLower
+    hUserBodyLower hguards hArgs
   rcases hExec nativeContract fn reservedNames n0 cases' body' bodyNative
-      bodyStart bodyEnd userBodyStart hLowerRuntime hFind hCase hBodyLower
-      hUserBodyLower hguards hArgs with
+      bodyStart bodyEnd userBodyStart hLowerRuntime hFind hLowerCases hCase
+      hBodyLower hUserBodyLower hguards hArgs with
     ⟨final, nativeYul, shared, store, hBody, hRevive, hProject, hMatch⟩
   refine ⟨final, nativeYul, shared, store, hBody, ?_, hRevive, hProject,
     hMatch⟩
@@ -28488,11 +28484,11 @@ private theorem NativeGeneratedSelectorHitUserBodyExecBridgeAtFuelRevivedLeaveAw
     NativeGeneratedSelectorHitUserBodyExecBridgeAtFuelRevivedLeaveAware irContract tx
       state observableSlots := by
   intro nativeContract fn reservedNames n0 cases' body' bodyNative bodyStart
-    bodyEnd userBodyStart hLowerRuntime hFind hCase hBodyLower hUserBodyLower
-    hguards hArgs
+    bodyEnd userBodyStart hLowerRuntime hFind hLowerCases hCase hBodyLower
+    hUserBodyLower hguards hArgs
   rcases hExec nativeContract fn reservedNames n0 cases' body' bodyNative
-      bodyStart bodyEnd userBodyStart hLowerRuntime hFind hCase hBodyLower
-      hUserBodyLower hguards hArgs with
+      bodyStart bodyEnd userBodyStart hLowerRuntime hFind hLowerCases hCase
+      hBodyLower hUserBodyLower hguards hArgs with
     ⟨final, nativeYul, shared, store, hBody, hRevive, hProject, hMatch⟩
   refine ⟨final, nativeYul, shared, store, hBody, ?_, ?_, hRevive, hProject,
     hMatch⟩
@@ -29055,7 +29051,10 @@ theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_literal_let_binding
             NativeGeneratedSelectedUserBodyLiteralLetBindings.toBody bindings ∧
           NativeGeneratedSelectedUserBodyLiteralLetBindings.GeneratedPrefixFreshBindings
             bindings ∧
-          (∀ (cases' suffix : List (Nat × List EvmYul.Yul.Ast.Stmt)),
+          (∀ (reservedNames : List String) (n0 : Nat)
+              (cases' suffix : List (Nat × List EvmYul.Yul.Ast.Stmt)),
+            NativeGeneratedLoweredSwitchCases irContract reservedNames n0
+              cases' →
             bindings.length + 2 ≤
               nativeGeneratedSelectorHitUserBodyFuel irContract fn cases' +
                 suffix.length + 9)) :
@@ -29108,8 +29107,45 @@ theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_literal_let_binding
       intro fn hFind
       obtain ⟨bindings, hBody, hFresh, hLen⟩ := hLetBindings fn hFind
       refine ⟨bindings, hBody, hFresh, ?_⟩
-      intro cases' suffix
+      intro _reservedNames _n0 cases' suffix _hLowerCases
       omega)
+
+/-- Compile-generated structural selected-body bridge for arbitrary
+literal-`let` binding lists.
+
+The normal execution bridge now asks only about `cases'` produced by lowering
+the actual `buildSwitchSourceCases`; this theorem discharges the exact fuel
+premise from the generated runtime size rather than from a body-length cap. -/
+theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_literal_let_bindings_lowered_cases
+    {spec : CompilationModel.CompilationModel} {selectors : List Nat}
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (hCompile : CompilationModel.compile spec selectors = .ok irContract)
+    (hSupported : SupportedSpec spec selectors)
+    (hLetBindings :
+      ∀ fn,
+        irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+          some fn →
+        ∃ bindings : List (String × Nat),
+          fn.body =
+            NativeGeneratedSelectedUserBodyLiteralLetBindings.toBody bindings ∧
+          NativeGeneratedSelectedUserBodyLiteralLetBindings.GeneratedPrefixFreshBindings
+            bindings) :
+    NativeGeneratedSelectedUserBodyResultBridgeAtFuel irContract tx state
+      observableSlots :=
+  NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_literal_let_bindings_with_fuel
+    irContract tx state observableSlots
+    (by
+      intro fn hFind
+      obtain ⟨bindings, hBody, hFresh⟩ := hLetBindings fn hFind
+      refine ⟨bindings, hBody, hFresh, ?_⟩
+      intro reservedNames n0 cases' suffix hLowerCases
+      rcases hLowerCases with ⟨midN, hLowerCases⟩
+      exact
+        nativeGeneratedSelectorHitUserBodyFuel_bound_of_literal_let_bindings_lowered_cases
+          hCompile hSupported hFind hBody hLowerCases suffix)
 
 /-- Block-wrapped leave selected user bodies discharge the unified selected-body
 result boundary. -/
@@ -29247,8 +29283,7 @@ inductive NativeGeneratedSelectedUserBodySimpleShape
             fn.body =
               NativeGeneratedSelectedUserBodyLiteralLetBindings.toBody bindings ∧
             NativeGeneratedSelectedUserBodyLiteralLetBindings.GeneratedPrefixFreshBindings
-              bindings ∧
-            bindings.length ≤ 7)
+              bindings)
   | singletonLetLit
       (hBody :
         ∀ fn,
@@ -29332,8 +29367,7 @@ inductive NativeGeneratedSelectedUserBodySimpleBody :
       (bindings : List (String × Nat))
       (hFresh :
         NativeGeneratedSelectedUserBodyLiteralLetBindings.GeneratedPrefixFreshBindings
-          bindings)
-      (hLen : bindings.length ≤ 7) :
+          bindings) :
       NativeGeneratedSelectedUserBodySimpleBody
         (NativeGeneratedSelectedUserBodyLiteralLetBindings.toBody bindings)
   | singletonLetLit
@@ -29378,7 +29412,7 @@ namespace NativeGeneratedSelectedUserBodySimpleBody
 /-- Executable checker for the body-local forms currently covered by the
 selected-body bridge. -/
 def checked? (body : List Yul.YulStmt) : Bool :=
-  if NativeGeneratedSelectedUserBodyLiteralLetBindings.checked? body then
+  if NativeGeneratedSelectedUserBodyLiteralLetBindings.checkedUnbounded? body then
     true
   else if NativeGeneratedSelectedUserBodyLiteralLetSequenceBody.checked? body then
     true
@@ -29405,7 +29439,7 @@ theorem of_checked? (body : List Yul.YulStmt)
     NativeGeneratedSelectedUserBodySimpleBody body := by
   unfold checked? at h
   cases hLetBindings :
-      NativeGeneratedSelectedUserBodyLiteralLetBindings.checked? body
+      NativeGeneratedSelectedUserBodyLiteralLetBindings.checkedUnbounded? body
   · simp [hLetBindings] at h
     cases hLetSeq :
       NativeGeneratedSelectedUserBodyLiteralLetSequenceBody.checked? body
@@ -29431,10 +29465,10 @@ theorem of_checked? (body : List Yul.YulStmt)
           (NativeGeneratedSelectedUserBodyLiteralLetSequenceBody.of_checked?
             body hLetSeq)
   · exact
-      let ⟨bindings, hBody, hFresh, hLen⟩ :=
-        NativeGeneratedSelectedUserBodyLiteralLetBindings.checked?_eq_true
+      let ⟨bindings, hBody, hFresh⟩ :=
+        NativeGeneratedSelectedUserBodyLiteralLetBindings.checkedUnbounded?_eq_true
           hLetBindings
-      hBody ▸ literalLetBindings bindings hFresh hLen
+      hBody ▸ literalLetBindings bindings hFresh
 
 end NativeGeneratedSelectedUserBodySimpleBody
 
@@ -29538,14 +29572,14 @@ theorem of_checked?
                     rw [hFind] at hFn
                     cases hFn
                     exact hSeq)
-          | literalLetBindings bindings hFresh hLen =>
+          | literalLetBindings bindings hFresh =>
               exact
                 NativeGeneratedSelectedUserBodySimpleShape.literalLetBindings
                   (by
                     intro fn hFn
                     rw [hFind] at hFn
                     cases hFn
-                    exact ⟨bindings, rfl, hFresh, hLen⟩)
+                    exact ⟨bindings, rfl, hFresh⟩)
           | singletonLetLit target assigned hFresh =>
               exact
                 NativeGeneratedSelectedUserBodySimpleShape.singletonLetLit
@@ -29605,10 +29639,13 @@ end NativeGeneratedSelectedUserBodySimpleShape
 /-- Checked selected-body result bridge for the currently proved simple
 selected-body shapes. -/
 theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_simple_shape
+    {spec : CompilationModel.CompilationModel} {selectors : List Nat}
     (irContract : IRContract)
     (tx : IRTransaction)
     (state : IRState)
     (observableSlots : List Nat)
+    (hCompile : CompilationModel.compile spec selectors = .ok irContract)
+    (hSupported : SupportedSpec spec selectors)
     (hShape : NativeGeneratedSelectedUserBodySimpleShape irContract tx) :
     NativeGeneratedSelectedUserBodyResultBridgeAtFuel irContract tx state
       observableSlots := by
@@ -29647,8 +29684,8 @@ theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_simple_shape
           irContract tx state observableSlots hBody
   | literalLetBindings hBody =>
       exact
-        NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_literal_let_bindings_le_seven
-          irContract tx state observableSlots hBody
+        NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_literal_let_bindings_lowered_cases
+          irContract tx state observableSlots hCompile hSupported hBody
   | singletonLetLit hBody =>
       exact
         NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_singleton_let_lit
@@ -29697,10 +29734,11 @@ private theorem NativeGeneratedSelectorHitUserBodyBridgeAtFuelRevived.of_execIRF
     NativeGeneratedSelectorHitUserBodyBridgeAtFuelRevived irContract tx state
       observableSlots := by
   intro nativeContract fn reservedNames n0 cases' body' bodyNative bodyStart
-    bodyEnd userBodyStart hLowerRuntime hFind hCase hBodyLower hUserBodyLower
+    bodyEnd userBodyStart hLowerRuntime hFind hLowerCases hCase hBodyLower
+    hUserBodyLower
   rcases hSelectedExecBridge nativeContract fn reservedNames n0 cases' body' bodyNative
-      bodyStart bodyEnd userBodyStart hLowerRuntime hFind hCase hBodyLower
-      hUserBodyLower (hguards fn hFind) (hArgs fn hFind) with
+      bodyStart bodyEnd userBodyStart hLowerRuntime hFind hLowerCases hCase
+      hBodyLower hUserBodyLower (hguards fn hFind) (hArgs fn hFind) with
     ⟨final, nativeYul, shared, store, hBody, hPreserves, hRevive, hProject,
       hMatchExec⟩
   refine ⟨final, nativeYul, shared, store, hBody, hPreserves, hRevive,
@@ -29723,10 +29761,11 @@ private theorem NativeGeneratedSelectorHitUserBodyBridgeAtFuelRestored.of_revive
     NativeGeneratedSelectorHitUserBodyBridgeAtFuelRestored irContract tx state
       observableSlots := by
   intro nativeContract fn reservedNames n0 cases' body' bodyNative bodyStart
-    bodyEnd userBodyStart hLowerRuntime hFind hCase hBodyLower hUserBodyLower
+    bodyEnd userBodyStart hLowerRuntime hFind hLowerCases hCase hBodyLower
+    hUserBodyLower
   rcases hRevived nativeContract fn reservedNames n0 cases' body' bodyNative
-      bodyStart bodyEnd userBodyStart hLowerRuntime hFind hCase hBodyLower
-      hUserBodyLower with
+      bodyStart bodyEnd userBodyStart hLowerRuntime hFind hLowerCases hCase
+      hBodyLower hUserBodyLower with
     ⟨final, nativeYul, shared, store, hBody, hPreserves, hRevive, hProject,
       hMatch⟩
   refine ⟨final, nativeYul, hBody, hPreserves, ?_, hMatch⟩
@@ -29858,13 +29897,14 @@ private def NativeGeneratedSelectorHitArtifactBridge
     (state : IRState)
     (observableSlots : List Nat) : Prop :=
   ∀ (nativeContract : EvmYul.Yul.Ast.YulContract) (fn : IRFunction)
-    (reservedNames : List String) (_n0 : Nat)
+    (reservedNames : List String) (n0 : Nat)
     (cases' : List (Nat × List EvmYul.Yul.Ast.Stmt))
     (body' : List EvmYul.Yul.Ast.Stmt) (bodyStart bodyEnd : Nat),
     Compiler.Proofs.YulGeneration.Backends.lowerRuntimeContractNative
         (Compiler.emitYul irContract).runtimeCode = .ok nativeContract →
     irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
         some fn →
+    NativeGeneratedLoweredSwitchCases irContract reservedNames n0 cases' →
     cases'.find? (fun entry => entry.1 == tx.functionSelector) =
         some (tx.functionSelector, body') →
     Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds
@@ -30046,9 +30086,9 @@ private theorem NativeGeneratedSelectorHitArtifactBridge.of_body_bridge_and_cont
     NativeGeneratedSelectorHitArtifactBridge irContract tx state
       observableSlots := by
   intro nativeContract fn reservedNames n0 cases' body' bodyStart bodyEnd
-    hLowerRuntime hFind hCase hBodyLower
+    hLowerRuntime hFind hLowerCases hCase hBodyLower
   rcases hBodyBridge nativeContract fn reservedNames n0 cases' body'
-      bodyStart bodyEnd hLowerRuntime hFind hCase hBodyLower with
+      bodyStart bodyEnd hLowerRuntime hFind hLowerCases hCase hBodyLower with
     ⟨final, nativeYul, hBody, hPreserves, hProject, hMatch⟩
   exact
     hDispatcherContinuation nativeContract fn reservedNames n0 cases' body' bodyStart bodyEnd
@@ -30128,7 +30168,7 @@ private theorem NativeGeneratedSelectorHitArtifactBridge.of_user_body_bridge_and
     NativeGeneratedSelectorHitArtifactBridge irContract tx state
       observableSlots := by
   intro nativeContract fn reservedNames n0 cases' body' bodyStart bodyEnd
-    hLowerRuntime hFind hCase hBodyLower
+    hLowerRuntime hFind hLowerCases hCase hBodyLower
   by_cases hPayable : fn.payable
   · rcases
       Compiler.Proofs.YulGeneration.Backends.Native.lowerStmtsNativeWithSwitchIds_switchCaseBody_payable_eq
@@ -30136,8 +30176,8 @@ private theorem NativeGeneratedSelectorHitArtifactBridge.of_user_body_bridge_and
         (by simpa using hPayable) hBodyLower with
       ⟨_guardBody, bodyNative, userBodyStart, _hBodyShape, hUserBodyLower⟩
     rcases hUserBodyBridge nativeContract fn reservedNames n0 cases' body'
-        bodyNative bodyStart bodyEnd userBodyStart hLowerRuntime hFind hCase
-        hBodyLower hUserBodyLower with
+        bodyNative bodyStart bodyEnd userBodyStart hLowerRuntime hFind
+        hLowerCases hCase hBodyLower hUserBodyLower with
       ⟨final, nativeYul, hBody, hPreserves, hProject, hMatch⟩
     exact
       hDispatcherContinuation nativeContract fn reservedNames n0 cases' body' bodyNative
@@ -30150,8 +30190,8 @@ private theorem NativeGeneratedSelectorHitArtifactBridge.of_user_body_bridge_and
       ⟨_callvalueGuardBody, _calldataGuardBody, bodyNative, userBodyStart,
         _hBodyShape, hUserBodyLower⟩
     rcases hUserBodyBridge nativeContract fn reservedNames n0 cases' body'
-        bodyNative bodyStart bodyEnd userBodyStart hLowerRuntime hFind hCase
-        hBodyLower hUserBodyLower with
+        bodyNative bodyStart bodyEnd userBodyStart hLowerRuntime hFind
+        hLowerCases hCase hBodyLower hUserBodyLower with
       ⟨final, nativeYul, hBody, hPreserves, hProject, hMatch⟩
     exact
       hDispatcherContinuation nativeContract fn reservedNames n0 cases' body' bodyNative
@@ -30232,7 +30272,7 @@ private theorem NativeGeneratedSelectorHitArtifactBridge.of_user_body_bridge_atF
     NativeGeneratedSelectorHitArtifactBridge irContract tx state
       observableSlots := by
   intro nativeContract fn reservedNames n0 cases' body' bodyStart bodyEnd
-    hLowerRuntime hFind hCase hBodyLower
+    hLowerRuntime hFind hLowerCases hCase hBodyLower
   by_cases hPayable : fn.payable
   · rcases
       Compiler.Proofs.YulGeneration.Backends.Native.lowerStmtsNativeWithSwitchIds_switchCaseBody_payable_eq
@@ -30240,8 +30280,8 @@ private theorem NativeGeneratedSelectorHitArtifactBridge.of_user_body_bridge_atF
         (by simpa using hPayable) hBodyLower with
       ⟨_guardBody, bodyNative, userBodyStart, _hBodyShape, hUserBodyLower⟩
     rcases hUserBodyBridge nativeContract fn reservedNames n0 cases' body'
-        bodyNative bodyStart bodyEnd userBodyStart hLowerRuntime hFind hCase
-        hBodyLower hUserBodyLower with
+        bodyNative bodyStart bodyEnd userBodyStart hLowerRuntime hFind
+        hLowerCases hCase hBodyLower hUserBodyLower with
       ⟨final, nativeYul, hBody, hPreserves, hProject, hMatch⟩
     exact
       hDispatcherContinuation nativeContract fn reservedNames n0 cases' body' bodyNative
@@ -30254,8 +30294,8 @@ private theorem NativeGeneratedSelectorHitArtifactBridge.of_user_body_bridge_atF
       ⟨_callvalueGuardBody, _calldataGuardBody, bodyNative, userBodyStart,
         _hBodyShape, hUserBodyLower⟩
     rcases hUserBodyBridge nativeContract fn reservedNames n0 cases' body'
-        bodyNative bodyStart bodyEnd userBodyStart hLowerRuntime hFind hCase
-        hBodyLower hUserBodyLower with
+        bodyNative bodyStart bodyEnd userBodyStart hLowerRuntime hFind
+        hLowerCases hCase hBodyLower hUserBodyLower with
       ⟨final, nativeYul, hBody, hPreserves, hProject, hMatch⟩
     exact
       hDispatcherContinuation nativeContract fn reservedNames n0 cases' body' bodyNative
@@ -30348,7 +30388,7 @@ private theorem NativeGeneratedSelectorHitArtifactBridge.of_user_body_bridge_atF
     NativeGeneratedSelectorHitArtifactBridge irContract tx state
       observableSlots := by
   intro nativeContract fn reservedNames n0 cases' body' bodyStart bodyEnd
-    hLowerRuntime hFind hCase hBodyLower
+    hLowerRuntime hFind hLowerCases hCase hBodyLower
   by_cases hPayable : fn.payable
   · rcases
       Compiler.Proofs.YulGeneration.Backends.Native.lowerStmtsNativeWithSwitchIds_switchCaseBody_payable_eq
@@ -30356,8 +30396,8 @@ private theorem NativeGeneratedSelectorHitArtifactBridge.of_user_body_bridge_atF
         (by simpa using hPayable) hBodyLower with
       ⟨_guardBody, bodyNative, userBodyStart, _hBodyShape, hUserBodyLower⟩
     rcases hUserBodyBridge nativeContract fn reservedNames n0 cases' body'
-        bodyNative bodyStart bodyEnd userBodyStart hLowerRuntime hFind hCase
-        hBodyLower hUserBodyLower with
+        bodyNative bodyStart bodyEnd userBodyStart hLowerRuntime hFind
+        hLowerCases hCase hBodyLower hUserBodyLower with
       ⟨final, nativeYul, hBody, hPreserves, hProject, hMatch⟩
     exact
       hDispatcherContinuation nativeContract fn reservedNames n0 cases' body' bodyNative
@@ -30370,8 +30410,8 @@ private theorem NativeGeneratedSelectorHitArtifactBridge.of_user_body_bridge_atF
       ⟨_callvalueGuardBody, _calldataGuardBody, bodyNative, userBodyStart,
         _hBodyShape, hUserBodyLower⟩
     rcases hUserBodyBridge nativeContract fn reservedNames n0 cases' body'
-        bodyNative bodyStart bodyEnd userBodyStart hLowerRuntime hFind hCase
-        hBodyLower hUserBodyLower with
+        bodyNative bodyStart bodyEnd userBodyStart hLowerRuntime hFind
+        hLowerCases hCase hBodyLower hUserBodyLower with
       ⟨final, nativeYul, hBody, hPreserves, hProject, hMatch⟩
     exact
       hDispatcherContinuation nativeContract fn reservedNames n0 cases' body' bodyNative
@@ -30413,10 +30453,10 @@ private theorem NativeGeneratedSelectorHitBridge.of_artifact_bridge
       spec selectors hSupported irContract tx state observableSlots nativeContract
       fn dummyNativeState dummyYul hcompile hLowerRuntime hFind hSelectorRange
       hSelectorsRange hNoWrap with
-    ⟨reservedNames, n0, cases', _midN, body', bodyStart, bodyEnd,
-      _hLowerCases, hCase, hBodyLower, _hDispatcherContinuation⟩
+    ⟨reservedNames, n0, cases', midN, body', bodyStart, bodyEnd,
+      hLowerCases, hCase, hBodyLower, _hDispatcherContinuation⟩
   exact hArtifactBridge nativeContract fn reservedNames n0 cases' body'
-    bodyStart bodyEnd hLowerRuntime hFind hCase hBodyLower
+    bodyStart bodyEnd hLowerRuntime hFind ⟨midN, hLowerCases⟩ hCase hBodyLower
 
 /-- Build the selector-hit bridge from a success-only bridge plus the generated
 guard-revert theorems.
@@ -30997,8 +31037,8 @@ private theorem nativeGeneratedSelectorHit_success_of_user_body_exec_bridge_atFu
         (by simpa using hPayable) hBodyLower with
       ⟨_guardBody, bodyNative, userBodyStart, _hBodyShape, hUserBodyLower⟩
     rcases hUserBodyBridge nativeContract fn reservedNames n0 cases' body'
-        bodyNative bodyStart bodyEnd userBodyStart hLowerRuntime hFind hCase
-        hBodyLower hUserBodyLower hguards hArgs with
+        bodyNative bodyStart bodyEnd userBodyStart hLowerRuntime hFind
+        ⟨_, hLowerCases⟩ hCase hBodyLower hUserBodyLower hguards hArgs with
       ⟨final, nativeYul, shared, store, hBody, hPreserves, hRevive,
         hProject, hMatchExec⟩
     exact
@@ -31016,8 +31056,8 @@ private theorem nativeGeneratedSelectorHit_success_of_user_body_exec_bridge_atFu
       ⟨_callvalueGuardBody, _calldataGuardBody, bodyNative, userBodyStart,
         _hBodyShape, hUserBodyLower⟩
     rcases hUserBodyBridge nativeContract fn reservedNames n0 cases' body'
-        bodyNative bodyStart bodyEnd userBodyStart hLowerRuntime hFind hCase
-        hBodyLower hUserBodyLower hguards hArgs with
+        bodyNative bodyStart bodyEnd userBodyStart hLowerRuntime hFind
+        ⟨_, hLowerCases⟩ hCase hBodyLower hUserBodyLower hguards hArgs with
       ⟨final, nativeYul, shared, store, hBody, hPreserves, hRevive,
         hProject, hMatchExec⟩
     exact
@@ -31200,8 +31240,8 @@ private theorem nativeGeneratedSelectorHit_success_of_user_body_exec_bridge_atFu
         (by simpa using hPayable) hBodyLower with
       ⟨guardBody, bodyNative, userBodyStart, hBodyShape, hUserBodyLower⟩
     rcases hUserBodyBridge nativeContract fn reservedNames n0 cases' body'
-        bodyNative bodyStart bodyEnd userBodyStart hLowerRuntime hFind hCase
-        hBodyLower hUserBodyLower hguards hArgs with
+        bodyNative bodyStart bodyEnd userBodyStart hLowerRuntime hFind
+        ⟨_, hLowerCases⟩ hCase hBodyLower hUserBodyLower hguards hArgs with
       ⟨final, nativeYul, shared, store, hBody, hPreservesMatched,
         hPreservesDiscr, hRevive, hProject, hMatchExec⟩
     have hCaseBody :
@@ -31490,8 +31530,8 @@ private theorem nativeGeneratedSelectorHit_success_of_user_body_exec_bridge_atFu
       ⟨callvalueGuardBody, calldataGuardBody, bodyNative, userBodyStart,
         hBodyShape, hUserBodyLower⟩
     rcases hUserBodyBridge nativeContract fn reservedNames n0 cases' body'
-        bodyNative bodyStart bodyEnd userBodyStart hLowerRuntime hFind hCase
-        hBodyLower hUserBodyLower hguards hArgs with
+        bodyNative bodyStart bodyEnd userBodyStart hLowerRuntime hFind
+        ⟨_, hLowerCases⟩ hCase hBodyLower hUserBodyLower hguards hArgs with
       ⟨final, nativeYul, shared, store, hBody, hPreservesMatched,
         hPreservesDiscr, hRevive, hProject, hMatchExec⟩
     have hCaseBody :
@@ -32982,7 +33022,7 @@ theorem compile_preserves_native_evmYulLean_of_compile_ok_supported_generated_ca
       hNoWrap
       (NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_simple_shape
         irContract tx (FunctionBody.initialIRStateForTx spec tx initialWorld)
-        observableSlots hSimpleBody)
+        observableSlots hcompile hSupported hSimpleBody)
       hEnv
 
 /-- Generated `callDispatcher` result theorem from `SupportedSpec + compile`,
