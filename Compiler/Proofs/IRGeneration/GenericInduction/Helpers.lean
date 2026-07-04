@@ -2242,6 +2242,484 @@ theorem stmtListHelperFreeCompiledCallsDisjoint_emit
         CompilationModel.compileEmit, bind, Except.bind] at hcompile)
     .nil
 
+private theorem yulStmtListCallsDisjoint_append
+    {runtimeContract : IRContract} {front back : List YulStmt}
+    (hfront : YulStmtListCallsDisjointFromInternalTable runtimeContract front)
+    (hback : YulStmtListCallsDisjointFromInternalTable runtimeContract back) :
+    YulStmtListCallsDisjointFromInternalTable runtimeContract (front ++ back) := by
+  induction hfront generalizing back with
+  | nil =>
+      simpa using hback
+  | comment msg rest _ ih =>
+      exact .comment msg (rest ++ back) (ih hback)
+  | let_ name value rest hvalue _ ih =>
+      exact .let_ name value (rest ++ back) hvalue (ih hback)
+  | assign name value rest hvalue _ ih =>
+      exact .assign name value (rest ++ back) hvalue (ih hback)
+  | exprStmt value rest hvalue _ ih =>
+      exact .exprStmt value (rest ++ back) hvalue (ih hback)
+  | if_ cond body rest hcond hbody _ _ ihRest =>
+      exact .if_ cond body (rest ++ back) hcond hbody (ihRest hback)
+  | block body rest hbody _ _ ihRest =>
+      exact .block body (rest ++ back) hbody (ihRest hback)
+  | funcDef name params rets body rest hbody _ _ ihRest =>
+      exact .funcDef name params rets body (rest ++ back) hbody (ihRest hback)
+  | switch_ expr cases defaultCase rest hexpr hcases hdefault _ _ _ ihRest =>
+      exact .switch_ expr cases defaultCase (rest ++ back) hexpr hcases hdefault
+        (ihRest hback)
+  | for_ init cond post body rest hinit hcond hpost hbody _ _ _ _ ihRest =>
+      exact .for_ init cond post body (rest ++ back) hinit hcond hpost hbody
+        (ihRest hback)
+
+private theorem yulStmtListCallsDisjoint_exprStmt_map_of_internalFunctions_nil
+    (runtimeContract : IRContract)
+    (hinternal : runtimeContract.internalFunctions = [])
+    {α : Type} (xs : List α) (f : α → YulExpr) :
+    YulStmtListCallsDisjointFromInternalTable runtimeContract
+      (xs.map (fun x => YulStmt.exprStmt (f x))) := by
+  induction xs with
+  | nil =>
+      exact .nil
+  | cons x xs ih =>
+      exact .exprStmt (f x) _
+        (yulExprCallsDisjointFromInternalTable_of_internalFunctions_nil
+          runtimeContract hinternal (f x))
+        ih
+
+private theorem yulStmtListCallsDisjoint_revertWithMessage
+    (runtimeContract : IRContract)
+    (hinternal : runtimeContract.internalFunctions = [])
+    (message : String) :
+    YulStmtListCallsDisjointFromInternalTable runtimeContract
+      (CompilationModel.revertWithMessage message) := by
+  unfold CompilationModel.revertWithMessage
+  apply yulStmtListCallsDisjoint_append
+  · apply yulStmtListCallsDisjoint_append
+    · exact
+        .exprStmt _ _
+          (yulExprCallsDisjointFromInternalTable_of_internalFunctions_nil
+            runtimeContract hinternal _)
+          (.exprStmt _ _
+            (yulExprCallsDisjointFromInternalTable_of_internalFunctions_nil
+              runtimeContract hinternal _)
+            (.exprStmt _ _
+              (yulExprCallsDisjointFromInternalTable_of_internalFunctions_nil
+                runtimeContract hinternal _)
+              .nil))
+    · exact yulStmtListCallsDisjoint_exprStmt_map_of_internalFunctions_nil
+        runtimeContract hinternal (chunkBytes32 (bytesFromString message)).zipIdx
+        (fun pair =>
+          YulExpr.call "mstore"
+            [YulExpr.lit (68 + pair.2 * 32), YulExpr.hex (wordFromBytes pair.1)])
+  · exact .exprStmt _ _
+      (yulExprCallsDisjointFromInternalTable_of_internalFunctions_nil
+        runtimeContract hinternal _)
+      .nil
+
+theorem stmtListHelperFreeCompiledCallsDisjoint_of_stmtListCompileCore_internalFunctions_nil
+    (runtimeContract : IRContract)
+    (hinternal : runtimeContract.internalFunctions = [])
+    {fields : List Field} :
+    ∀ {scope : List String} {stmts : List Stmt},
+      FunctionBody.StmtListCompileCore scope stmts →
+        StmtListHelperFreeCompiledCallsDisjoint runtimeContract fields scope stmts
+  | _, [], .nil => .nil
+  | _, Stmt.letVar name value :: rest, .letVar hvalue _ hrest =>
+      .cons
+        (fun _hhelper compiledIR hcompile => by
+          rcases FunctionBody.compileExpr_core_ok (fields := fields) hvalue with
+            ⟨valueIR, hvalueIR⟩
+          have hvalueIRInternal :
+              CompilationModel.compileExprWithInternals fields .calldata [] value =
+                Except.ok valueIR := by
+            simpa [CompilationModel.compileExprWithInternals_nil_eq] using hvalueIR
+          simp [CompilationModel.compileStmt, CompilationModel.compileStmtWithFork,
+            hvalueIRInternal] at hcompile
+          cases hcompile
+          exact .let_ name valueIR []
+            (yulExprCallsDisjointFromInternalTable_of_internalFunctions_nil
+              runtimeContract hinternal valueIR)
+            .nil)
+        (by
+          simpa [stmtNextScope, collectStmtNames] using
+            (stmtListHelperFreeCompiledCallsDisjoint_of_stmtListCompileCore_internalFunctions_nil
+              runtimeContract hinternal (fields := fields)
+              (stmtListCompileCore_of_scopeNamesIncluded hrest
+                (FunctionBody.scopeNamesIncluded_collectStmtNames_letVar
+                  FunctionBody.scopeNamesIncluded_refl))))
+  | _, Stmt.assignVar name value :: rest, .assignVar hvalue _ hrest =>
+      .cons
+        (fun _hhelper compiledIR hcompile => by
+          rcases FunctionBody.compileExpr_core_ok (fields := fields) hvalue with
+            ⟨valueIR, hvalueIR⟩
+          have hvalueIRInternal :
+              CompilationModel.compileExprWithInternals fields .calldata [] value =
+                Except.ok valueIR := by
+            simpa [CompilationModel.compileExprWithInternals_nil_eq] using hvalueIR
+          simp [CompilationModel.compileStmt, CompilationModel.compileStmtWithFork,
+            hvalueIRInternal] at hcompile
+          cases hcompile
+          exact .assign name valueIR []
+            (yulExprCallsDisjointFromInternalTable_of_internalFunctions_nil
+              runtimeContract hinternal valueIR)
+            .nil)
+        (by
+          simpa [stmtNextScope, collectStmtNames] using
+            (stmtListHelperFreeCompiledCallsDisjoint_of_stmtListCompileCore_internalFunctions_nil
+              runtimeContract hinternal (fields := fields)
+              (stmtListCompileCore_of_scopeNamesIncluded hrest
+                (FunctionBody.scopeNamesIncluded_collectStmtNames_assignVar
+                  FunctionBody.scopeNamesIncluded_refl))))
+  | _, Stmt.require cond message :: rest, .require_ hcond _ hrest =>
+      .cons
+        (fun _hhelper compiledIR hcompile => by
+          rcases FunctionBody.compileRequireFailCond_core_ok (fields := fields) hcond with
+            ⟨failCond, hfailCond⟩
+          have hfailCondInternal :
+              CompilationModel.compileRequireFailCondWithInternals fields .calldata []
+                  cond =
+                Except.ok failCond := by
+            simpa [CompilationModel.compileRequireFailCondWithInternals_nil_eq] using
+              hfailCond
+          simp [CompilationModel.compileStmt, CompilationModel.compileStmtWithFork,
+            hfailCondInternal] at hcompile
+          cases hcompile
+          exact .if_ failCond (CompilationModel.revertWithMessage message) []
+            (yulExprCallsDisjointFromInternalTable_of_internalFunctions_nil
+              runtimeContract hinternal failCond)
+            (yulStmtListCallsDisjoint_revertWithMessage runtimeContract hinternal message)
+            .nil)
+        (by
+          simpa [stmtNextScope, collectStmtNames] using
+            (stmtListHelperFreeCompiledCallsDisjoint_of_stmtListCompileCore_internalFunctions_nil
+              runtimeContract hinternal (fields := fields)
+              (stmtListCompileCore_of_scopeNamesIncluded hrest
+                (FunctionBody.scopeNamesIncluded_collectStmtNames_tail
+                  (stmt := Stmt.require cond message)
+                  FunctionBody.scopeNamesIncluded_refl))))
+  | _, Stmt.return value :: rest, .return_ hvalue _ hrest =>
+      .cons
+        (fun _hhelper compiledIR hcompile => by
+          rcases FunctionBody.compileExpr_core_ok (fields := fields) hvalue with
+            ⟨valueIR, hvalueIR⟩
+          have hvalueIRInternal :
+              CompilationModel.compileExprWithInternals fields .calldata [] value =
+                Except.ok valueIR := by
+            simpa [CompilationModel.compileExprWithInternals_nil_eq] using hvalueIR
+          simp [CompilationModel.compileStmt, CompilationModel.compileStmtWithFork,
+            hvalueIRInternal] at hcompile
+          cases hcompile
+          exact .exprStmt _ _
+            (yulExprCallsDisjointFromInternalTable_of_internalFunctions_nil
+              runtimeContract hinternal _)
+            (.exprStmt _ _
+              (yulExprCallsDisjointFromInternalTable_of_internalFunctions_nil
+                runtimeContract hinternal _)
+              .nil))
+        (by
+          simpa [stmtNextScope, collectStmtNames] using
+            (stmtListHelperFreeCompiledCallsDisjoint_of_stmtListCompileCore_internalFunctions_nil
+              runtimeContract hinternal (fields := fields)
+              (stmtListCompileCore_of_scopeNamesIncluded hrest
+                (FunctionBody.scopeNamesIncluded_collectStmtNames_tail
+                  (stmt := Stmt.return value)
+                  FunctionBody.scopeNamesIncluded_refl))))
+  | _, Stmt.stop :: rest, .stop hrest =>
+      .cons
+        (fun _hhelper compiledIR hcompile => by
+          simp [CompilationModel.compileStmt, CompilationModel.compileStmtWithFork] at hcompile
+          cases hcompile
+          exact .exprStmt _ _
+            (yulExprCallsDisjointFromInternalTable_of_internalFunctions_nil
+              runtimeContract hinternal _)
+            .nil)
+        (by
+          simpa [stmtNextScope, collectStmtNames] using
+            (stmtListHelperFreeCompiledCallsDisjoint_of_stmtListCompileCore_internalFunctions_nil
+              runtimeContract hinternal (fields := fields)
+              (stmtListCompileCore_of_scopeNamesIncluded hrest
+                (FunctionBody.scopeNamesIncluded_collectStmtNames_tail
+                  (stmt := Stmt.stop)
+                  FunctionBody.scopeNamesIncluded_refl))))
+  | _, Stmt.mstore offset value :: rest, .mstore hoffset _ hvalue _ hrest =>
+      .cons
+        (fun _hhelper compiledIR hcompile => by
+          rcases FunctionBody.compileExpr_core_ok (fields := fields) hoffset with
+            ⟨offsetIR, hoffsetIR⟩
+          rcases FunctionBody.compileExpr_core_ok (fields := fields) hvalue with
+            ⟨valueIR, hvalueIR⟩
+          have hoffsetIRInternal :
+              CompilationModel.compileExprWithInternals fields .calldata [] offset =
+                Except.ok offsetIR := by
+            simpa [CompilationModel.compileExprWithInternals_nil_eq] using hoffsetIR
+          have hvalueIRInternal :
+              CompilationModel.compileExprWithInternals fields .calldata [] value =
+                Except.ok valueIR := by
+            simpa [CompilationModel.compileExprWithInternals_nil_eq] using hvalueIR
+          simp [CompilationModel.compileStmt, CompilationModel.compileStmtWithFork,
+            hoffsetIRInternal, hvalueIRInternal, bind, Except.bind] at hcompile
+          cases hcompile
+          exact .exprStmt _ _
+            (yulExprCallsDisjointFromInternalTable_of_internalFunctions_nil
+              runtimeContract hinternal _)
+            .nil)
+        (by
+          simpa [stmtNextScope, collectStmtNames] using
+            (stmtListHelperFreeCompiledCallsDisjoint_of_stmtListCompileCore_internalFunctions_nil
+              runtimeContract hinternal (fields := fields)
+              (stmtListCompileCore_of_scopeNamesIncluded hrest
+                (FunctionBody.scopeNamesIncluded_collectStmtNames_tail
+                  (stmt := Stmt.mstore offset value)
+                  FunctionBody.scopeNamesIncluded_refl))))
+  | _, Stmt.tstore offset value :: rest, .tstore hoffset _ hvalue _ hrest =>
+      .cons
+        (fun _hhelper compiledIR hcompile => by
+          rcases FunctionBody.compileExpr_core_ok (fields := fields) hoffset with
+            ⟨offsetIR, hoffsetIR⟩
+          rcases FunctionBody.compileExpr_core_ok (fields := fields) hvalue with
+            ⟨valueIR, hvalueIR⟩
+          have hoffsetIRInternal :
+              CompilationModel.compileExprWithInternals fields .calldata [] offset =
+                Except.ok offsetIR := by
+            simpa [CompilationModel.compileExprWithInternals_nil_eq] using hoffsetIR
+          have hvalueIRInternal :
+              CompilationModel.compileExprWithInternals fields .calldata [] value =
+                Except.ok valueIR := by
+            simpa [CompilationModel.compileExprWithInternals_nil_eq] using hvalueIR
+          simp [CompilationModel.compileStmt, CompilationModel.compileStmtWithFork,
+            hoffsetIRInternal, hvalueIRInternal, bind, Except.bind] at hcompile
+          cases hcompile
+          exact .exprStmt _ _
+            (yulExprCallsDisjointFromInternalTable_of_internalFunctions_nil
+              runtimeContract hinternal _)
+            .nil)
+        (by
+          simpa [stmtNextScope, collectStmtNames] using
+            (stmtListHelperFreeCompiledCallsDisjoint_of_stmtListCompileCore_internalFunctions_nil
+              runtimeContract hinternal (fields := fields)
+              (stmtListCompileCore_of_scopeNamesIncluded hrest
+                (FunctionBody.scopeNamesIncluded_collectStmtNames_tail
+                  (stmt := Stmt.tstore offset value)
+                  FunctionBody.scopeNamesIncluded_refl))))
+
+private theorem yulStmtListCallsDisjoint_of_compiledCallsDisjoint
+    {runtimeContract : IRContract}
+    {fields : List Field}
+    {scope : List String}
+    {stmts : List Stmt}
+    {bodyIR : List YulStmt}
+    (hdisjoint : StmtListHelperFreeCompiledCallsDisjoint runtimeContract fields scope stmts)
+    (hsurface : stmtListTouchesUnsupportedHelperSurface stmts = false)
+    (hcompile :
+      CompilationModel.compileStmtList
+        fields [] [] .calldata [] false scope [] stmts = Except.ok bodyIR) :
+    YulStmtListCallsDisjointFromInternalTable runtimeContract bodyIR := by
+  induction hdisjoint generalizing bodyIR with
+  | nil =>
+      simp [CompilationModel.compileStmtList, CompilationModel.compileStmtListWithFork] at hcompile
+      cases hcompile
+      exact .nil
+  | @cons scope stmt rest hhead htail ih =>
+      have hsplit := Bool.or_eq_false_iff.mp <| by
+        simpa [stmtListTouchesUnsupportedHelperSurface] using hsurface
+      have hstmtSurface : stmtTouchesUnsupportedHelperSurface stmt = false := hsplit.1
+      have hrestSurface : stmtListTouchesUnsupportedHelperSurface rest = false := hsplit.2
+      rcases FunctionBody.compileStmtList_cons_ok_inv
+          (fields := fields)
+          (events := [])
+          (errors := [])
+          (inScopeNames := scope)
+          (adtTypes := [])
+          hcompile with
+        ⟨headIR, tailIR, hheadCompile, htailCompile, hbody⟩
+      subst hbody
+      have htailCompile' :
+          CompilationModel.compileStmtList
+            fields [] [] .calldata [] false (stmtNextScope scope stmt) [] rest =
+              Except.ok tailIR := by
+        simpa [stmtNextScope] using htailCompile
+      exact yulStmtListCallsDisjoint_append
+        (hhead hstmtSurface headIR hheadCompile)
+        (ih (bodyIR := tailIR) hrestSurface htailCompile')
+
+theorem stmtListHelperFreeCompiledCallsDisjoint_of_stmtListTerminalCore_internalFunctions_nil
+    (runtimeContract : IRContract)
+    (hinternal : runtimeContract.internalFunctions = [])
+    {fields : List Field} :
+    ∀ {scope : List String} {stmts : List Stmt},
+      FunctionBody.StmtListTerminalCore scope stmts →
+        StmtListHelperFreeCompiledCallsDisjoint runtimeContract fields scope stmts
+  | _, Stmt.letVar name value :: rest, .letVar hvalue hinScope hrest =>
+      stmtListHelperFreeCompiledCallsDisjoint_append
+        (stmtListHelperFreeCompiledCallsDisjoint_of_stmtListCompileCore_internalFunctions_nil
+          runtimeContract hinternal (fields := fields)
+          (FunctionBody.StmtListCompileCore.letVar hvalue hinScope
+            FunctionBody.StmtListCompileCore.nil))
+        (by
+          simpa [stmtNextScope, collectStmtNames] using
+            (stmtListHelperFreeCompiledCallsDisjoint_of_stmtListTerminalCore_internalFunctions_nil
+              runtimeContract hinternal (fields := fields)
+              (stmtListTerminalCore_of_scopeNamesIncluded hrest
+                (FunctionBody.scopeNamesIncluded_collectStmtNames_letVar
+                  FunctionBody.scopeNamesIncluded_refl))))
+  | _, Stmt.assignVar name value :: rest, .assignVar hvalue hinScope hrest =>
+      stmtListHelperFreeCompiledCallsDisjoint_append
+        (stmtListHelperFreeCompiledCallsDisjoint_of_stmtListCompileCore_internalFunctions_nil
+          runtimeContract hinternal (fields := fields)
+          (FunctionBody.StmtListCompileCore.assignVar hvalue hinScope
+            FunctionBody.StmtListCompileCore.nil))
+        (by
+          simpa [stmtNextScope, collectStmtNames] using
+            (stmtListHelperFreeCompiledCallsDisjoint_of_stmtListTerminalCore_internalFunctions_nil
+              runtimeContract hinternal (fields := fields)
+              (stmtListTerminalCore_of_scopeNamesIncluded hrest
+                (FunctionBody.scopeNamesIncluded_collectStmtNames_assignVar
+                  FunctionBody.scopeNamesIncluded_refl))))
+  | _, Stmt.require cond message :: rest, .require_ hcond hinScope hrest =>
+      stmtListHelperFreeCompiledCallsDisjoint_append
+        (stmtListHelperFreeCompiledCallsDisjoint_of_stmtListCompileCore_internalFunctions_nil
+          runtimeContract hinternal (fields := fields)
+          (FunctionBody.StmtListCompileCore.require_ hcond hinScope
+            FunctionBody.StmtListCompileCore.nil))
+        (by
+          simpa [stmtNextScope, collectStmtNames] using
+            (stmtListHelperFreeCompiledCallsDisjoint_of_stmtListTerminalCore_internalFunctions_nil
+              runtimeContract hinternal (fields := fields)
+              (stmtListTerminalCore_of_scopeNamesIncluded hrest
+                (FunctionBody.scopeNamesIncluded_collectStmtNames_tail
+                  (stmt := Stmt.require cond message)
+                  FunctionBody.scopeNamesIncluded_refl))))
+  | _, Stmt.return value :: rest, .return_ hvalue hinScope hrest =>
+      stmtListHelperFreeCompiledCallsDisjoint_append
+        (stmtListHelperFreeCompiledCallsDisjoint_of_stmtListCompileCore_internalFunctions_nil
+          runtimeContract hinternal (fields := fields)
+          (FunctionBody.StmtListCompileCore.return_ hvalue hinScope
+            FunctionBody.StmtListCompileCore.nil))
+        (by
+          simpa [stmtNextScope, collectStmtNames] using
+            (stmtListHelperFreeCompiledCallsDisjoint_of_stmtListCompileCore_internalFunctions_nil
+              runtimeContract hinternal (fields := fields)
+              (stmtListCompileCore_of_scopeNamesIncluded hrest
+                (FunctionBody.scopeNamesIncluded_collectStmtNames_tail
+                  (stmt := Stmt.return value)
+                  FunctionBody.scopeNamesIncluded_refl))))
+  | _, Stmt.stop :: rest, .stop hrest =>
+      stmtListHelperFreeCompiledCallsDisjoint_append
+        (stmtListHelperFreeCompiledCallsDisjoint_of_stmtListCompileCore_internalFunctions_nil
+          runtimeContract hinternal (fields := fields)
+          (FunctionBody.StmtListCompileCore.stop FunctionBody.StmtListCompileCore.nil))
+        (by
+          simpa [stmtNextScope, collectStmtNames] using
+            (stmtListHelperFreeCompiledCallsDisjoint_of_stmtListCompileCore_internalFunctions_nil
+              runtimeContract hinternal (fields := fields)
+              (stmtListCompileCore_of_scopeNamesIncluded hrest
+                (FunctionBody.scopeNamesIncluded_collectStmtNames_tail
+                  (stmt := Stmt.stop)
+                  FunctionBody.scopeNamesIncluded_refl))))
+  | _, Stmt.mstore offset value :: rest, .mstore hoffset hinScopeOffset hvalue hinScopeValue hrest =>
+      stmtListHelperFreeCompiledCallsDisjoint_append
+        (stmtListHelperFreeCompiledCallsDisjoint_of_stmtListCompileCore_internalFunctions_nil
+          runtimeContract hinternal (fields := fields)
+          (FunctionBody.StmtListCompileCore.mstore hoffset hinScopeOffset hvalue hinScopeValue
+            FunctionBody.StmtListCompileCore.nil))
+        (by
+          simpa [stmtNextScope, collectStmtNames] using
+            (stmtListHelperFreeCompiledCallsDisjoint_of_stmtListTerminalCore_internalFunctions_nil
+              runtimeContract hinternal (fields := fields)
+              (stmtListTerminalCore_of_scopeNamesIncluded hrest
+                (FunctionBody.scopeNamesIncluded_collectStmtNames_tail
+                  (stmt := Stmt.mstore offset value)
+                  FunctionBody.scopeNamesIncluded_refl))))
+  | _, Stmt.tstore offset value :: rest, .tstore hoffset hinScopeOffset hvalue hinScopeValue hrest =>
+      stmtListHelperFreeCompiledCallsDisjoint_append
+        (stmtListHelperFreeCompiledCallsDisjoint_of_stmtListCompileCore_internalFunctions_nil
+          runtimeContract hinternal (fields := fields)
+          (FunctionBody.StmtListCompileCore.tstore hoffset hinScopeOffset hvalue hinScopeValue
+            FunctionBody.StmtListCompileCore.nil))
+        (by
+          simpa [stmtNextScope, collectStmtNames] using
+            (stmtListHelperFreeCompiledCallsDisjoint_of_stmtListTerminalCore_internalFunctions_nil
+              runtimeContract hinternal (fields := fields)
+              (stmtListTerminalCore_of_scopeNamesIncluded hrest
+                (FunctionBody.scopeNamesIncluded_collectStmtNames_tail
+                  (stmt := Stmt.tstore offset value)
+                  FunctionBody.scopeNamesIncluded_refl))))
+  | _, Stmt.ite cond thenBranch elseBranch :: rest, .ite hcond _ hthen helse hrest =>
+      stmtListHelperFreeCompiledCallsDisjoint_append
+        (.cons
+          (fun _hhelper compiledIR hcompile => by
+            have helseNonempty : elseBranch.isEmpty = false := by
+              cases elseBranch with
+              | nil =>
+                  exfalso
+                  exact FunctionBody.stmtListTerminalCore_ne_nil helse rfl
+              | cons _ _ =>
+                  simp
+            rcases FunctionBody.compileStmt_terminal_ite_ok_inv
+                (fields := fields)
+                (inScopeNames := _)
+                (cond := cond)
+                (thenBranch := thenBranch)
+                (elseBranch := elseBranch)
+                (bodyIR := compiledIR)
+                (helseNonempty := helseNonempty)
+                hcompile with
+              ⟨condIR, thenIR, elseIR, tempName,
+                _hcondIR, hthenIR, helseIR, _htemp, hcompiledIR⟩
+            have hthenSurface :
+                stmtListTouchesUnsupportedHelperSurface thenBranch = false :=
+              SupportedStmtList.helperSurfaceClosed
+                (fields := fields)
+                (scope := _)
+                (stmts := thenBranch)
+                (SupportedStmtList.terminalCore hthen)
+            have helseSurface :
+                stmtListTouchesUnsupportedHelperSurface elseBranch = false :=
+              SupportedStmtList.helperSurfaceClosed
+                (fields := fields)
+                (scope := _)
+                (stmts := elseBranch)
+                (SupportedStmtList.terminalCore helse)
+            have hthenDisjoint :
+                YulStmtListCallsDisjointFromInternalTable runtimeContract thenIR :=
+              yulStmtListCallsDisjoint_of_compiledCallsDisjoint
+                (stmtListHelperFreeCompiledCallsDisjoint_of_stmtListTerminalCore_internalFunctions_nil
+                  runtimeContract hinternal (fields := fields) hthen)
+                hthenSurface
+                hthenIR
+            have helseDisjoint :
+                YulStmtListCallsDisjointFromInternalTable runtimeContract elseIR :=
+              yulStmtListCallsDisjoint_of_compiledCallsDisjoint
+                (stmtListHelperFreeCompiledCallsDisjoint_of_stmtListTerminalCore_internalFunctions_nil
+                  runtimeContract hinternal (fields := fields) helse)
+                helseSurface
+                helseIR
+            rw [hcompiledIR]
+            exact .block _ _
+              (.let_ tempName condIR _
+                (yulExprCallsDisjointFromInternalTable_of_internalFunctions_nil
+                  runtimeContract hinternal condIR)
+                (.if_ (YulExpr.ident tempName) thenIR _
+                  (yulExprCallsDisjointFromInternalTable_of_internalFunctions_nil
+                    runtimeContract hinternal (YulExpr.ident tempName))
+                  hthenDisjoint
+                  (.if_ (YulExpr.call "iszero" [YulExpr.ident tempName]) elseIR _
+                    (yulExprCallsDisjointFromInternalTable_of_internalFunctions_nil
+                      runtimeContract hinternal
+                      (YulExpr.call "iszero" [YulExpr.ident tempName]))
+                    helseDisjoint
+                    .nil)))
+              .nil)
+          .nil)
+        (by
+          simpa [stmtNextScope, collectStmtNames] using
+            (stmtListHelperFreeCompiledCallsDisjoint_of_stmtListCompileCore_internalFunctions_nil
+              runtimeContract hinternal (fields := fields)
+              (stmtListCompileCore_of_scopeNamesIncluded hrest
+                (FunctionBody.scopeNamesIncluded_collectStmtNames_tail
+                  (stmt := Stmt.ite cond thenBranch elseBranch)
+                  FunctionBody.scopeNamesIncluded_refl))))
+
 theorem stmtListHelperFreeStepInterface_of_supportedStmtList_of_surface_exceptMappingWrites
     {fields : List Field}
     {scope : List String}
