@@ -32700,6 +32700,13 @@ private def ownerGuardCalldataload4MaskSstoreLitStopSourceBody
 private def checkedSubUnderflowConditionSource (delta : Nat) : Yul.YulExpr :=
   Yul.YulExpr.call "lt" [Yul.YulExpr.ident "count", Yul.YulExpr.lit delta]
 
+/-- Source Yul guard for generated checked-increment bodies. -/
+private def checkedAddOverflowConditionSource : Yul.YulExpr :=
+  Yul.YulExpr.call "iszero" [
+    Yul.YulExpr.call "gt" [
+      Yul.YulExpr.ident "newCount",
+      Yul.YulExpr.ident "count"]]
+
 /-- Source Yul shape for generated checked decrement bodies. -/
 private def checkedSubSloadLitSstoreLitStopSourceBody
     (writeSlot delta errSelector errLen errText : Nat) : List Yul.YulStmt :=
@@ -32712,6 +32719,22 @@ private def checkedSubSloadLitSstoreLitStopSourceBody
      Yul.YulExpr.call "sub" [
        Yul.YulExpr.ident "count",
        Yul.YulExpr.lit delta]]),
+   Yul.YulStmt.exprStmt (Yul.YulExpr.call "stop" [])]
+
+/-- Source Yul shape for generated checked increment bodies. -/
+private def checkedAddSloadLitSstoreLitStopSourceBody
+    (writeSlot delta errSelector errLen errText : Nat) : List Yul.YulStmt :=
+  [Yul.YulStmt.let_ "count"
+    (Yul.YulExpr.call "sload" [Yul.YulExpr.lit writeSlot]),
+   Yul.YulStmt.let_ "newCount"
+    (Yul.YulExpr.call "add" [
+      Yul.YulExpr.ident "count",
+      Yul.YulExpr.lit delta]),
+   Yul.YulStmt.if_ checkedAddOverflowConditionSource
+    (ownerGuardRevertSourceBody errSelector errLen errText),
+   Yul.YulStmt.exprStmt (Yul.YulExpr.call "sstore" [
+     Yul.YulExpr.lit writeSlot,
+     Yul.YulExpr.ident "newCount"]),
    Yul.YulStmt.exprStmt (Yul.YulExpr.call "stop" [])]
 
 /-- Native lowering target for the generated ownership failure revert payload. -/
@@ -32769,6 +32792,20 @@ private def nativeGeneratedCheckedSubSloadLitSstoreLitStopBody
       .call "sub" [.ident "count", .lit delta]])),
    .ExprStmtCall (lowerExprNative (.call "stop" []))]
 
+/-- Native lowering target for generated checked increment bodies. -/
+private def nativeGeneratedCheckedAddSloadLitSstoreLitStopBody
+    (writeSlot delta errSelector errLen errText : Nat) :
+    List EvmYul.Yul.Ast.Stmt :=
+  [.Let ["count"] (some (lowerExprNative
+      (.call "sload" [.lit writeSlot]))),
+   .Let ["newCount"] (some (lowerExprNative
+      (.call "add" [.ident "count", .lit delta]))),
+   .If (lowerExprNative checkedAddOverflowConditionSource)
+    (nativeGeneratedOwnerGuardRevertBody errSelector errLen errText),
+   .ExprStmtCall (lowerExprNative
+    (.call "sstore" [.lit writeSlot, .ident "newCount"])),
+   .ExprStmtCall (lowerExprNative (.call "stop" []))]
+
 private theorem eval_lowerExprNative_owner_guard_condition_ok_fuel
     (fuel : Nat)
     (shared : EvmYul.SharedState .Yul)
@@ -32812,6 +32849,30 @@ private theorem eval_lowerExprNative_checked_sub_underflow_condition_ok_fuel
     EvmYul.Yul.evalPrimCall, EvmYul.Yul.execPrimCall,
     EvmYul.Yul.primCall, EvmYul.Yul.reverse', EvmYul.Yul.cons',
     EvmYul.Yul.head', EvmYul.Yul.State.lookup!, hLookup]
+
+private theorem eval_lowerExprNative_checked_add_overflow_condition_ok_fuel
+    (fuel : Nat)
+    (shared : EvmYul.SharedState .Yul)
+    (store : EvmYul.Yul.VarStore)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (current newValue : EvmYul.UInt256)
+    (hLookupCount :
+      EvmYul.Yul.State.lookup? "count" (.Ok shared store) = some current)
+    (hLookupNewCount :
+      EvmYul.Yul.State.lookup? "newCount" (.Ok shared store) =
+        some newValue) :
+    EvmYul.Yul.eval (fuel + 10)
+        (lowerExprNative checkedAddOverflowConditionSource)
+        codeOverride (.Ok shared store) =
+      .ok (.Ok shared store,
+        EvmYul.UInt256.isZero (EvmYul.UInt256.gt newValue current)) := by
+  simp [checkedAddOverflowConditionSource, lowerExprNative,
+    lookupRuntimePrimOp, EvmYul.Yul.exec, EvmYul.Yul.eval,
+    EvmYul.Yul.evalValues, EvmYul.Yul.evalArgs, EvmYul.Yul.evalTail,
+    EvmYul.Yul.evalPrimCall, EvmYul.Yul.execPrimCall,
+    EvmYul.Yul.primCall, EvmYul.Yul.reverse', EvmYul.Yul.cons',
+    EvmYul.Yul.head', EvmYul.Yul.State.lookup!, hLookupCount,
+    hLookupNewCount]
 
 private theorem lowerStmtsNativeWithSwitchIds_owner_guard_sstore_lit_add_sload_lit_stop
     (reservedNames : List String)
@@ -32879,6 +32940,25 @@ private theorem lowerStmtsNativeWithSwitchIds_checked_sub_sload_lit_sstore_lit_s
   simp [checkedSubSloadLitSstoreLitStopSourceBody,
     checkedSubUnderflowConditionSource, ownerGuardRevertSourceBody,
     nativeGeneratedCheckedSubSloadLitSstoreLitStopBody,
+    nativeGeneratedOwnerGuardRevertBody,
+    lowerStmtsNativeWithSwitchIds_cons, lowerStmtsNativeWithSwitchIds_nil,
+    lowerStmtGroupNativeWithSwitchIds_let,
+    lowerStmtGroupNativeWithSwitchIds_if,
+    lowerStmtGroupNativeWithSwitchIds_expr, Bind.bind, Except.bind,
+    Pure.pure, Except.pure, List.append_nil]
+
+private theorem lowerStmtsNativeWithSwitchIds_checked_add_sload_lit_sstore_lit_stop
+    (reservedNames : List String)
+    (userBodyStart writeSlot delta errSelector errLen errText : Nat) :
+    lowerStmtsNativeWithSwitchIds reservedNames userBodyStart
+        (checkedAddSloadLitSstoreLitStopSourceBody writeSlot delta errSelector
+          errLen errText) =
+      .ok
+        (nativeGeneratedCheckedAddSloadLitSstoreLitStopBody writeSlot delta
+          errSelector errLen errText, userBodyStart) := by
+  simp [checkedAddSloadLitSstoreLitStopSourceBody,
+    checkedAddOverflowConditionSource, ownerGuardRevertSourceBody,
+    nativeGeneratedCheckedAddSloadLitSstoreLitStopBody,
     nativeGeneratedOwnerGuardRevertBody,
     lowerStmtsNativeWithSwitchIds_cons, lowerStmtsNativeWithSwitchIds_nil,
     lowerStmtGroupNativeWithSwitchIds_let,
@@ -34305,6 +34385,243 @@ private theorem exec_let_count_sload_markedPrefix_ok
     EvmYul.State.addAccessedStorageKey,
     EvmYul.Substate.addAccessedStorageKey]
 
+private theorem exec_let_newCount_add_count_lit_ok_fuel
+    (fuel : Nat) (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (shared : EvmYul.SharedState .Yul) (store : EvmYul.Yul.VarStore)
+    (current : EvmYul.UInt256) (delta : Nat)
+    (hLookupCount :
+      EvmYul.Yul.State.lookup? "count" (.Ok shared store) = some current)
+    (hFreshNewCount :
+      EvmYul.Yul.State.lookup? "newCount" (.Ok shared store) = none) :
+    EvmYul.Yul.exec (fuel + 10)
+        (.Let ["newCount"] (some (lowerExprNative
+          (.call "add" [.ident "count", .lit delta]))))
+        codeOverride (.Ok shared store) =
+      .ok (.Ok shared
+        (store.insert "newCount"
+          (EvmYul.UInt256.add current (EvmYul.UInt256.ofNat delta)))) := by
+  have hLookupCountStore : Finmap.lookup "count" store = some current := by
+    simpa [EvmYul.Yul.State.lookup?, EvmYul.Yul.State.store] using
+      hLookupCount
+  have hFreshNewCountStore : Finmap.lookup "newCount" store = none := by
+    simpa [EvmYul.Yul.State.lookup?, EvmYul.Yul.State.store] using
+      hFreshNewCount
+  simp [lowerExprNative, lookupRuntimePrimOp, EvmYul.Yul.exec,
+    EvmYul.Yul.eval, EvmYul.Yul.execSeq, EvmYul.Yul.checkDeclaration,
+    EvmYul.Yul.firstDuplicate?, EvmYul.Yul.firstDeclared?,
+    EvmYul.Yul.evalValues, EvmYul.Yul.evalArgs, EvmYul.Yul.evalTail,
+    EvmYul.Yul.evalPrimCall, EvmYul.Yul.execPrimCall,
+    EvmYul.Yul.primCall, EvmYul.Yul.State.executionEnv,
+    EvmYul.Yul.reverse', EvmYul.Yul.cons', EvmYul.Yul.head',
+    EvmYul.Yul.multifill', EvmYul.Yul.State.multifill,
+    EvmYul.Yul.State.insert, EvmYul.Yul.State.lookup?,
+    EvmYul.Yul.State.store, EvmYul.Yul.State.lookup!,
+    hLookupCount, hFreshNewCount, hLookupCountStore,
+    hFreshNewCountStore]
+
+private theorem exec_block_nativeGeneratedCheckedAddTail_success_guard
+    (fuel : Nat) (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (shared : EvmYul.SharedState .Yul) (store : EvmYul.Yul.VarStore)
+    (writeSlot errSelector errLen errText : Nat)
+    (current newValue : EvmYul.UInt256)
+    (hLookupCount :
+      EvmYul.Yul.State.lookup? "count" (.Ok shared store) = some current)
+    (hLookupNewCount :
+      EvmYul.Yul.State.lookup? "newCount" (.Ok shared store) =
+        some newValue)
+    (hGuardZero :
+      EvmYul.UInt256.isZero (EvmYul.UInt256.gt newValue current) =
+        (⟨0⟩ : EvmYul.UInt256))
+    (hPerm : shared.executionEnv.perm = true) :
+    EvmYul.Yul.exec (fuel + 13)
+        (.Block
+          ([.If (lowerExprNative checkedAddOverflowConditionSource)
+              (nativeGeneratedOwnerGuardRevertBody errSelector errLen
+                errText)] ++
+            nativeGeneratedSstoreLitIdentStopBody writeSlot "newCount"))
+        codeOverride (.Ok shared store) =
+      let shared1 : EvmYul.SharedState .Yul :=
+        { shared with
+          toState :=
+            shared.toState.sstore (EvmYul.UInt256.ofNat writeSlot) newValue }
+      let stoppedState :=
+        (EvmYul.Yul.State.Ok shared1 store).setMachineState
+          ((EvmYul.Yul.State.Ok shared1 store).toMachineState.setHReturn
+            ByteArray.empty)
+      .error (EvmYul.Yul.Exception.YulHalt stoppedState ⟨0⟩) := by
+  let tail := nativeGeneratedSstoreLitIdentStopBody writeSlot "newCount"
+  let shared1 : EvmYul.SharedState .Yul :=
+    { shared with
+      toState :=
+        shared.toState.sstore (EvmYul.UInt256.ofNat writeSlot) newValue }
+  let stoppedState :=
+    (EvmYul.Yul.State.Ok shared1 store).setMachineState
+      ((EvmYul.Yul.State.Ok shared1 store).toMachineState.setHReturn
+        ByteArray.empty)
+  have hEval :
+      EvmYul.Yul.eval (fuel + 10)
+          (lowerExprNative checkedAddOverflowConditionSource)
+          codeOverride (.Ok shared store) =
+        .ok (.Ok shared store, (⟨0⟩ : EvmYul.UInt256)) := by
+    have hEvalRaw :=
+      eval_lowerExprNative_checked_add_overflow_condition_ok_fuel
+        fuel shared store codeOverride current newValue hLookupCount
+        hLookupNewCount
+    simpa [hGuardZero] using hEvalRaw
+  have hHead :
+      EvmYul.Yul.exec (fuel + 11)
+          (.If (lowerExprNative checkedAddOverflowConditionSource)
+            (nativeGeneratedOwnerGuardRevertBody errSelector errLen errText))
+          codeOverride (.Ok shared store) =
+        .ok (.Ok shared store) := by
+    have hFuel : fuel + 11 = Nat.succ (fuel + 10) := by omega
+    rw [hFuel]
+    exact
+      Native.exec_if_eval_zero (fuel + 10)
+        (lowerExprNative checkedAddOverflowConditionSource)
+        (nativeGeneratedOwnerGuardRevertBody errSelector errLen errText)
+        codeOverride (.Ok shared store) (.Ok shared store) hEval
+  have hTailBlock :
+      EvmYul.Yul.exec (fuel + 12) (.Block tail) codeOverride
+          (.Ok shared store) =
+        .error (EvmYul.Yul.Exception.YulHalt stoppedState ⟨0⟩) := by
+    simpa [tail, shared1, stoppedState] using
+      (exec_block_nativeGeneratedSstoreLitIdentStopBody_closed
+        fuel codeOverride shared store writeSlot "newCount" newValue
+        hLookupNewCount hPerm)
+  have hTailSeq :
+      EvmYul.Yul.execSeq (fuel + 11) tail codeOverride (.Ok shared store) =
+        .error (EvmYul.Yul.Exception.YulHalt stoppedState ⟨0⟩) := by
+    have hBlock :
+        EvmYul.Yul.exec (Nat.succ (fuel + 11)) (.Block tail) codeOverride
+            (.Ok shared store) =
+          .error (EvmYul.Yul.Exception.YulHalt stoppedState ⟨0⟩) := by
+      simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hTailBlock
+    exact
+      Native.execSeq_of_exec_block_error (fuel + 11) tail codeOverride
+        (.Ok shared store)
+        (EvmYul.Yul.Exception.YulHalt stoppedState ⟨0⟩) hBlock
+  have hFuel : fuel + 13 = (fuel + 11) + 2 := by omega
+  rw [hFuel]
+  simpa [tail, shared1, stoppedState] using
+    (Native.exec_block_cons_tail_error (fuel + 11)
+      (.If (lowerExprNative checkedAddOverflowConditionSource)
+        (nativeGeneratedOwnerGuardRevertBody errSelector errLen errText))
+      tail codeOverride (.Ok shared store) (.Ok shared store)
+      (EvmYul.Yul.Exception.YulHalt stoppedState ⟨0⟩) hHead hTailSeq)
+
+private theorem exec_block_nativeGeneratedCheckedAddTail_revert_guard
+    (fuel : Nat) (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (shared : EvmYul.SharedState .Yul) (store : EvmYul.Yul.VarStore)
+    (writeSlot errSelector errLen errText : Nat)
+    (current newValue : EvmYul.UInt256)
+    (hLookupCount :
+      EvmYul.Yul.State.lookup? "count" (.Ok shared store) = some current)
+    (hLookupNewCount :
+      EvmYul.Yul.State.lookup? "newCount" (.Ok shared store) =
+        some newValue)
+    (hGuardNonzero :
+      EvmYul.UInt256.isZero (EvmYul.UInt256.gt newValue current) ≠
+        (⟨0⟩ : EvmYul.UInt256)) :
+    EvmYul.Yul.exec (fuel + 35)
+        (.Block
+          ([.If (lowerExprNative checkedAddOverflowConditionSource)
+              (nativeGeneratedOwnerGuardRevertBody errSelector errLen
+                errText)] ++
+            nativeGeneratedSstoreLitIdentStopBody writeSlot "newCount"))
+        codeOverride (.Ok shared store) =
+      let shared0 : EvmYul.SharedState .Yul :=
+        { shared with
+          toMachineState :=
+            shared.toMachineState.mstore (EvmYul.UInt256.ofNat 0)
+              (EvmYul.UInt256.ofNat errSelector) }
+      let shared1 : EvmYul.SharedState .Yul :=
+        { shared0 with
+          toMachineState :=
+            shared0.toMachineState.mstore (EvmYul.UInt256.ofNat 4)
+              (EvmYul.UInt256.ofNat 32) }
+      let shared2 : EvmYul.SharedState .Yul :=
+        { shared1 with
+          toMachineState :=
+            shared1.toMachineState.mstore (EvmYul.UInt256.ofNat 36)
+              (EvmYul.UInt256.ofNat errLen) }
+      let shared3 : EvmYul.SharedState .Yul :=
+        { shared2 with
+          toMachineState :=
+            shared2.toMachineState.mstore (EvmYul.UInt256.ofNat 68)
+              (EvmYul.UInt256.ofNat errText) }
+      .error (EvmYul.Yul.Exception.Revert
+        ((.Ok shared3 store : EvmYul.Yul.State).setMachineState
+          ((.Ok shared3 store : EvmYul.Yul.State).toMachineState.evmRevert
+            (EvmYul.UInt256.ofNat 0) (EvmYul.UInt256.ofNat 100)))) := by
+  let tail := nativeGeneratedSstoreLitIdentStopBody writeSlot "newCount"
+  let shared0 : EvmYul.SharedState .Yul :=
+    { shared with
+      toMachineState :=
+        shared.toMachineState.mstore (EvmYul.UInt256.ofNat 0)
+          (EvmYul.UInt256.ofNat errSelector) }
+  let shared1 : EvmYul.SharedState .Yul :=
+    { shared0 with
+      toMachineState :=
+        shared0.toMachineState.mstore (EvmYul.UInt256.ofNat 4)
+          (EvmYul.UInt256.ofNat 32) }
+  let shared2 : EvmYul.SharedState .Yul :=
+    { shared1 with
+      toMachineState :=
+        shared1.toMachineState.mstore (EvmYul.UInt256.ofNat 36)
+          (EvmYul.UInt256.ofNat errLen) }
+  let shared3 : EvmYul.SharedState .Yul :=
+    { shared2 with
+      toMachineState :=
+        shared2.toMachineState.mstore (EvmYul.UInt256.ofNat 68)
+          (EvmYul.UInt256.ofNat errText) }
+  let revertState : EvmYul.Yul.State :=
+    (.Ok shared3 store : EvmYul.Yul.State).setMachineState
+      ((.Ok shared3 store : EvmYul.Yul.State).toMachineState.evmRevert
+        (EvmYul.UInt256.ofNat 0) (EvmYul.UInt256.ofNat 100))
+  have hEval :
+      EvmYul.Yul.eval (fuel + 32)
+          (lowerExprNative checkedAddOverflowConditionSource)
+          codeOverride (.Ok shared store) =
+        .ok (.Ok shared store,
+          EvmYul.UInt256.isZero (EvmYul.UInt256.gt newValue current)) := by
+    have hEvalRaw :=
+      eval_lowerExprNative_checked_add_overflow_condition_ok_fuel
+        (fuel + 22) shared store codeOverride current newValue hLookupCount
+        hLookupNewCount
+    simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hEvalRaw
+  have hBody :
+      EvmYul.Yul.exec (fuel + 32)
+          (.Block (nativeGeneratedOwnerGuardRevertBody errSelector errLen
+            errText))
+          codeOverride (.Ok shared store) =
+        .error (EvmYul.Yul.Exception.Revert revertState) := by
+    simpa [shared0, shared1, shared2, shared3, revertState,
+      Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+      (exec_block_nativeGeneratedOwnerGuardRevertBody_error
+        fuel codeOverride shared store errSelector errLen errText)
+  have hHead :
+      EvmYul.Yul.exec (fuel + 33)
+          (.If (lowerExprNative checkedAddOverflowConditionSource)
+            (nativeGeneratedOwnerGuardRevertBody errSelector errLen errText))
+          codeOverride (.Ok shared store) =
+        .error (EvmYul.Yul.Exception.Revert revertState) := by
+    have hFuel : fuel + 33 = Nat.succ (fuel + 32) := by omega
+    rw [hFuel]
+    exact
+      Native.exec_if_eval_nonzero_error (fuel + 32)
+        (lowerExprNative checkedAddOverflowConditionSource)
+        (nativeGeneratedOwnerGuardRevertBody errSelector errLen errText)
+        codeOverride (.Ok shared store) (.Ok shared store)
+        (EvmYul.UInt256.isZero (EvmYul.UInt256.gt newValue current))
+        (EvmYul.Yul.Exception.Revert revertState) hEval hGuardNonzero hBody
+  simpa [tail, shared0, shared1, shared2, shared3, revertState] using
+    (Native.exec_block_cons_error (fuel + 33)
+      (.If (lowerExprNative checkedAddOverflowConditionSource)
+        (nativeGeneratedOwnerGuardRevertBody errSelector errLen errText))
+      tail codeOverride (.Ok shared store)
+      (EvmYul.Yul.Exception.Revert revertState) hHead)
+
 private theorem exec_block_nativeGeneratedCheckedSubSloadLitSstoreLitStopBody_success_markedPrefix
     (fuel : Nat) (contract : EvmYul.Yul.Ast.YulContract)
     (tx : YulTransaction) (storage : IRStorageSlot → IRStorageWord)
@@ -34515,6 +34832,430 @@ private theorem exec_block_nativeGeneratedCheckedSubSloadLitSstoreLitStopBody_re
         (.call "sload" [.lit writeSlot]))))
       tail (some contract) initialWithStore withCount
       (EvmYul.Yul.Exception.Revert revertState) hHead hTailSeq)
+
+private theorem exec_block_nativeGeneratedCheckedAddSloadLitSstoreLitStopBody_success_markedPrefix
+    (fuel : Nat) (contract : EvmYul.Yul.Ast.YulContract)
+    (tx : YulTransaction) (storage : IRStorageSlot → IRStorageWord)
+    (observableSlots : List Nat) (switchId : Nat)
+    (writeSlot delta errSelector errLen errText : Nat)
+    (hGuardZero :
+      let shared :=
+        Native.nativeSwitchPostInitFreeMemorySharedState contract tx storage
+          observableSlots
+      let p := shared.sload (EvmYul.UInt256.ofNat writeSlot)
+      let newValue := EvmYul.UInt256.add p.2 (EvmYul.UInt256.ofNat delta)
+      EvmYul.UInt256.isZero (EvmYul.UInt256.gt newValue p.2) =
+        (⟨0⟩ : EvmYul.UInt256))
+    (hPerm :
+      (Native.nativeSwitchPostInitFreeMemorySharedState contract tx storage
+        observableSlots).executionEnv.perm = true) :
+    let initialWithStore :=
+      Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId
+        contract tx storage observableSlots switchId
+        Native.nativeSwitchHasSelectorStore
+    let shared :=
+      Native.nativeSwitchPostInitFreeMemorySharedState contract tx storage
+        observableSlots
+    let p := shared.sload (EvmYul.UInt256.ofNat writeSlot)
+    let sharedCount : EvmYul.SharedState .Yul :=
+      { shared with toState := p.1 }
+    let storeWithCount := initialWithStore.store.insert "count" p.2
+    let newValue := EvmYul.UInt256.add p.2 (EvmYul.UInt256.ofNat delta)
+    let storeWithNewCount := storeWithCount.insert "newCount" newValue
+    let sharedStored : EvmYul.SharedState .Yul :=
+      { sharedCount with
+        toState :=
+          sharedCount.toState.sstore (EvmYul.UInt256.ofNat writeSlot)
+            newValue }
+    let stoppedState :=
+      (EvmYul.Yul.State.Ok sharedStored storeWithNewCount).setMachineState
+        ((EvmYul.Yul.State.Ok sharedStored storeWithNewCount).toMachineState.setHReturn
+          ByteArray.empty)
+    EvmYul.Yul.exec (fuel + 17)
+        (.Block
+          (nativeGeneratedCheckedAddSloadLitSstoreLitStopBody writeSlot delta
+            errSelector errLen errText))
+        (some contract) initialWithStore =
+      .error (EvmYul.Yul.Exception.YulHalt stoppedState ⟨0⟩) := by
+  intro initialWithStore shared p sharedCount storeWithCount newValue
+    storeWithNewCount sharedStored stoppedState
+  let withCount : EvmYul.Yul.State := .Ok sharedCount storeWithCount
+  let withNewCount : EvmYul.Yul.State :=
+    .Ok sharedCount storeWithNewCount
+  let tailAfterNewCount :=
+    [.If (lowerExprNative checkedAddOverflowConditionSource)
+        (nativeGeneratedOwnerGuardRevertBody errSelector errLen errText)] ++
+      nativeGeneratedSstoreLitIdentStopBody writeSlot "newCount"
+  let tailAfterCount :=
+    [.Let ["newCount"] (some (lowerExprNative
+      (.call "add" [.ident "count", .lit delta])))] ++ tailAfterNewCount
+  have hHeadCount :
+      EvmYul.Yul.exec (fuel + 15)
+          (.Let ["count"] (some (lowerExprNative
+            (.call "sload" [.lit writeSlot]))))
+          (some contract) initialWithStore =
+        .ok withCount := by
+    have hLet :=
+      exec_let_count_sload_markedPrefix_ok
+        (fuel + 5) contract tx storage observableSlots switchId writeSlot
+    simpa [initialWithStore, shared, p, sharedCount, storeWithCount, withCount,
+      Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hLet
+  have hLookupCount :
+      EvmYul.Yul.State.lookup? "count" withCount = some p.2 := by
+    simp [withCount, storeWithCount, EvmYul.Yul.State.lookup?,
+      EvmYul.Yul.State.store, Finmap.lookup_insert]
+  have hNewCountNeCount : "newCount" ≠ "count" := by
+    decide
+  have hNewCountNeMatched :
+      "newCount" ≠ nativeSwitchMatchedTempName switchId := by
+    intro h
+    have hLen := congrArg String.length h
+    have hp :
+        (toString "__verity_native_switch_matched_").length = 31 := by
+      decide
+    have hn : "newCount".length = 8 := by
+      decide
+    simp [nativeSwitchMatchedTempName, hp, hn] at hLen
+    omega
+  have hNewCountNeDiscr :
+      "newCount" ≠ nativeSwitchDiscrTempName switchId := by
+    intro h
+    have hLen := congrArg String.length h
+    have hp :
+        (toString "__verity_native_switch_discr_").length = 29 := by
+      decide
+    have hn : "newCount".length = 8 := by
+      decide
+    simp [nativeSwitchDiscrTempName, hp, hn] at hLen
+    omega
+  have hNewCountNeHasSelector : "newCount" ≠ "__has_selector" := by
+    decide
+  have hFreshNewCount :
+      EvmYul.Yul.State.lookup? "newCount" withCount = none := by
+    simp [withCount, storeWithCount, initialWithStore,
+      Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId,
+      Native.nativeSwitchPostInitFreeMemoryStorePrefixStateForId,
+      Native.nativeSwitchPostInitFreeMemoryState,
+      Native.nativeSwitchPostInitFreeMemorySharedState,
+      Native.nativeSwitchHasSelectorStore,
+      EvmYul.Yul.State.insert, EvmYul.Yul.State.lookup?,
+      EvmYul.Yul.State.store, Finmap.lookup_insert_of_ne,
+      hNewCountNeCount, hNewCountNeMatched, hNewCountNeDiscr,
+      hNewCountNeHasSelector]
+  have hHeadNewCount :
+      EvmYul.Yul.exec (fuel + 14)
+          (.Let ["newCount"] (some (lowerExprNative
+            (.call "add" [.ident "count", .lit delta]))))
+          (some contract) withCount =
+        .ok withNewCount := by
+    have hLet :=
+      exec_let_newCount_add_count_lit_ok_fuel
+        (fuel + 4) (some contract) sharedCount storeWithCount p.2 delta
+        hLookupCount hFreshNewCount
+    simpa [withCount, withNewCount, newValue, storeWithNewCount,
+      Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hLet
+  have hCountNeNewCount : "count" ≠ "newCount" := by
+    decide
+  have hLookupCountStore :
+      Finmap.lookup "count" storeWithCount = some p.2 := by
+    simpa [withCount, EvmYul.Yul.State.lookup?, EvmYul.Yul.State.store]
+      using hLookupCount
+  have hLookupCountNew :
+      EvmYul.Yul.State.lookup? "count" withNewCount = some p.2 := by
+    simp [withNewCount, storeWithNewCount, EvmYul.Yul.State.lookup?,
+      EvmYul.Yul.State.store, Finmap.lookup_insert_of_ne,
+      hCountNeNewCount, hLookupCountStore]
+  have hLookupNewCount :
+      EvmYul.Yul.State.lookup? "newCount" withNewCount = some newValue := by
+    simp [withNewCount, storeWithNewCount, EvmYul.Yul.State.lookup?,
+      EvmYul.Yul.State.store, Finmap.lookup_insert]
+  have hPermCount : sharedCount.executionEnv.perm = true := by
+    simpa [sharedCount, p, EvmYul.State.sload,
+      EvmYul.State.addAccessedStorageKey,
+      EvmYul.Substate.addAccessedStorageKey] using hPerm
+  have hTailBlock :
+      EvmYul.Yul.exec (fuel + 15) (.Block tailAfterNewCount)
+          (some contract) withNewCount =
+        .error (EvmYul.Yul.Exception.YulHalt stoppedState ⟨0⟩) := by
+    have hTail :=
+      exec_block_nativeGeneratedCheckedAddTail_success_guard
+        (fuel + 2) (some contract) sharedCount storeWithNewCount writeSlot
+        errSelector errLen errText p.2 newValue
+        (by simpa [withNewCount] using hLookupCountNew)
+        (by simpa [withNewCount] using hLookupNewCount)
+        (by simpa [shared, p, newValue] using hGuardZero)
+        hPermCount
+    simpa [tailAfterNewCount, withNewCount, sharedStored, stoppedState,
+      Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hTail
+  have hTailSeqAfterNewCount :
+      EvmYul.Yul.execSeq (fuel + 14) tailAfterNewCount (some contract)
+          withNewCount =
+        .error (EvmYul.Yul.Exception.YulHalt stoppedState ⟨0⟩) := by
+    have hBlock :
+        EvmYul.Yul.exec (Nat.succ (fuel + 14)) (.Block tailAfterNewCount)
+            (some contract) withNewCount =
+          .error (EvmYul.Yul.Exception.YulHalt stoppedState ⟨0⟩) := by
+      simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hTailBlock
+    exact
+      Native.execSeq_of_exec_block_error (fuel + 14) tailAfterNewCount
+        (some contract) withNewCount
+        (EvmYul.Yul.Exception.YulHalt stoppedState ⟨0⟩) hBlock
+  have hAfterCountBlock :
+      EvmYul.Yul.exec (fuel + 16) (.Block tailAfterCount) (some contract)
+          withCount =
+        .error (EvmYul.Yul.Exception.YulHalt stoppedState ⟨0⟩) := by
+    have hFuel : fuel + 16 = (fuel + 14) + 2 := by omega
+    rw [hFuel]
+    simpa [tailAfterCount] using
+      (Native.exec_block_cons_tail_error (fuel + 14)
+        (.Let ["newCount"] (some (lowerExprNative
+          (.call "add" [.ident "count", .lit delta]))))
+        tailAfterNewCount (some contract) withCount withNewCount
+        (EvmYul.Yul.Exception.YulHalt stoppedState ⟨0⟩) hHeadNewCount
+        hTailSeqAfterNewCount)
+  have hTailSeqAfterCount :
+      EvmYul.Yul.execSeq (fuel + 15) tailAfterCount (some contract)
+          withCount =
+        .error (EvmYul.Yul.Exception.YulHalt stoppedState ⟨0⟩) := by
+    have hBlock :
+        EvmYul.Yul.exec (Nat.succ (fuel + 15)) (.Block tailAfterCount)
+            (some contract) withCount =
+          .error (EvmYul.Yul.Exception.YulHalt stoppedState ⟨0⟩) := by
+      simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+        hAfterCountBlock
+    exact
+      Native.execSeq_of_exec_block_error (fuel + 15) tailAfterCount
+        (some contract) withCount
+        (EvmYul.Yul.Exception.YulHalt stoppedState ⟨0⟩) hBlock
+  have hFuel : fuel + 17 = (fuel + 15) + 2 := by omega
+  rw [hFuel]
+  simpa [nativeGeneratedCheckedAddSloadLitSstoreLitStopBody,
+    nativeGeneratedSstoreLitIdentStopBody, tailAfterCount,
+    tailAfterNewCount, withCount, withNewCount, initialWithStore, shared, p,
+    sharedCount, storeWithCount, newValue, storeWithNewCount, sharedStored,
+    stoppedState] using
+    (Native.exec_block_cons_tail_error (fuel + 15)
+      (.Let ["count"] (some (lowerExprNative
+        (.call "sload" [.lit writeSlot]))))
+      tailAfterCount (some contract) initialWithStore withCount
+      (EvmYul.Yul.Exception.YulHalt stoppedState ⟨0⟩) hHeadCount
+      hTailSeqAfterCount)
+
+private theorem exec_block_nativeGeneratedCheckedAddSloadLitSstoreLitStopBody_revert_markedPrefix
+    (fuel : Nat) (contract : EvmYul.Yul.Ast.YulContract)
+    (tx : YulTransaction) (storage : IRStorageSlot → IRStorageWord)
+    (observableSlots : List Nat) (switchId : Nat)
+    (writeSlot delta errSelector errLen errText : Nat)
+    (hGuardNonzero :
+      let shared :=
+        Native.nativeSwitchPostInitFreeMemorySharedState contract tx storage
+          observableSlots
+      let p := shared.sload (EvmYul.UInt256.ofNat writeSlot)
+      let newValue := EvmYul.UInt256.add p.2 (EvmYul.UInt256.ofNat delta)
+      EvmYul.UInt256.isZero (EvmYul.UInt256.gt newValue p.2) ≠
+        (⟨0⟩ : EvmYul.UInt256)) :
+    let initialWithStore :=
+      Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId
+        contract tx storage observableSlots switchId
+        Native.nativeSwitchHasSelectorStore
+    let shared :=
+      Native.nativeSwitchPostInitFreeMemorySharedState contract tx storage
+        observableSlots
+    let p := shared.sload (EvmYul.UInt256.ofNat writeSlot)
+    let sharedCount : EvmYul.SharedState .Yul :=
+      { shared with toState := p.1 }
+    let storeWithCount := initialWithStore.store.insert "count" p.2
+    let newValue := EvmYul.UInt256.add p.2 (EvmYul.UInt256.ofNat delta)
+    let storeWithNewCount := storeWithCount.insert "newCount" newValue
+    let shared0 : EvmYul.SharedState .Yul :=
+      { sharedCount with
+        toMachineState :=
+          sharedCount.toMachineState.mstore (EvmYul.UInt256.ofNat 0)
+            (EvmYul.UInt256.ofNat errSelector) }
+    let shared1 : EvmYul.SharedState .Yul :=
+      { shared0 with
+        toMachineState :=
+          shared0.toMachineState.mstore (EvmYul.UInt256.ofNat 4)
+            (EvmYul.UInt256.ofNat 32) }
+    let shared2 : EvmYul.SharedState .Yul :=
+      { shared1 with
+        toMachineState :=
+          shared1.toMachineState.mstore (EvmYul.UInt256.ofNat 36)
+            (EvmYul.UInt256.ofNat errLen) }
+    let shared3 : EvmYul.SharedState .Yul :=
+      { shared2 with
+        toMachineState :=
+          shared2.toMachineState.mstore (EvmYul.UInt256.ofNat 68)
+            (EvmYul.UInt256.ofNat errText) }
+    let revertState : EvmYul.Yul.State :=
+      (.Ok shared3 storeWithNewCount : EvmYul.Yul.State).setMachineState
+        ((.Ok shared3 storeWithNewCount : EvmYul.Yul.State).toMachineState.evmRevert
+          (EvmYul.UInt256.ofNat 0) (EvmYul.UInt256.ofNat 100))
+    EvmYul.Yul.exec (fuel + 39)
+        (.Block
+          (nativeGeneratedCheckedAddSloadLitSstoreLitStopBody writeSlot delta
+            errSelector errLen errText))
+        (some contract) initialWithStore =
+      .error (EvmYul.Yul.Exception.Revert revertState) := by
+  intro initialWithStore shared p sharedCount storeWithCount newValue
+    storeWithNewCount shared0 shared1 shared2 shared3 revertState
+  let withCount : EvmYul.Yul.State := .Ok sharedCount storeWithCount
+  let withNewCount : EvmYul.Yul.State :=
+    .Ok sharedCount storeWithNewCount
+  let tailAfterNewCount :=
+    [.If (lowerExprNative checkedAddOverflowConditionSource)
+        (nativeGeneratedOwnerGuardRevertBody errSelector errLen errText)] ++
+      nativeGeneratedSstoreLitIdentStopBody writeSlot "newCount"
+  let tailAfterCount :=
+    [.Let ["newCount"] (some (lowerExprNative
+      (.call "add" [.ident "count", .lit delta])))] ++ tailAfterNewCount
+  have hHeadCount :
+      EvmYul.Yul.exec (fuel + 37)
+          (.Let ["count"] (some (lowerExprNative
+            (.call "sload" [.lit writeSlot]))))
+          (some contract) initialWithStore =
+        .ok withCount := by
+    have hLet :=
+      exec_let_count_sload_markedPrefix_ok
+        (fuel + 27) contract tx storage observableSlots switchId writeSlot
+    simpa [initialWithStore, shared, p, sharedCount, storeWithCount, withCount,
+      Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hLet
+  have hLookupCount :
+      EvmYul.Yul.State.lookup? "count" withCount = some p.2 := by
+    simp [withCount, storeWithCount, EvmYul.Yul.State.lookup?,
+      EvmYul.Yul.State.store, Finmap.lookup_insert]
+  have hNewCountNeCount : "newCount" ≠ "count" := by
+    decide
+  have hNewCountNeMatched :
+      "newCount" ≠ nativeSwitchMatchedTempName switchId := by
+    intro h
+    have hLen := congrArg String.length h
+    have hp :
+        (toString "__verity_native_switch_matched_").length = 31 := by
+      decide
+    have hn : "newCount".length = 8 := by
+      decide
+    simp [nativeSwitchMatchedTempName, hp, hn] at hLen
+    omega
+  have hNewCountNeDiscr :
+      "newCount" ≠ nativeSwitchDiscrTempName switchId := by
+    intro h
+    have hLen := congrArg String.length h
+    have hp :
+        (toString "__verity_native_switch_discr_").length = 29 := by
+      decide
+    have hn : "newCount".length = 8 := by
+      decide
+    simp [nativeSwitchDiscrTempName, hp, hn] at hLen
+    omega
+  have hNewCountNeHasSelector : "newCount" ≠ "__has_selector" := by
+    decide
+  have hFreshNewCount :
+      EvmYul.Yul.State.lookup? "newCount" withCount = none := by
+    simp [withCount, storeWithCount, initialWithStore,
+      Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId,
+      Native.nativeSwitchPostInitFreeMemoryStorePrefixStateForId,
+      Native.nativeSwitchPostInitFreeMemoryState,
+      Native.nativeSwitchPostInitFreeMemorySharedState,
+      Native.nativeSwitchHasSelectorStore,
+      EvmYul.Yul.State.insert, EvmYul.Yul.State.lookup?,
+      EvmYul.Yul.State.store, Finmap.lookup_insert_of_ne,
+      hNewCountNeCount, hNewCountNeMatched, hNewCountNeDiscr,
+      hNewCountNeHasSelector]
+  have hHeadNewCount :
+      EvmYul.Yul.exec (fuel + 36)
+          (.Let ["newCount"] (some (lowerExprNative
+            (.call "add" [.ident "count", .lit delta]))))
+          (some contract) withCount =
+        .ok withNewCount := by
+    have hLet :=
+      exec_let_newCount_add_count_lit_ok_fuel
+        (fuel + 26) (some contract) sharedCount storeWithCount p.2 delta
+        hLookupCount hFreshNewCount
+    simpa [withCount, withNewCount, newValue, storeWithNewCount,
+      Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hLet
+  have hCountNeNewCount : "count" ≠ "newCount" := by
+    decide
+  have hLookupCountStore :
+      Finmap.lookup "count" storeWithCount = some p.2 := by
+    simpa [withCount, EvmYul.Yul.State.lookup?, EvmYul.Yul.State.store]
+      using hLookupCount
+  have hLookupCountNew :
+      EvmYul.Yul.State.lookup? "count" withNewCount = some p.2 := by
+    simp [withNewCount, storeWithNewCount, EvmYul.Yul.State.lookup?,
+      EvmYul.Yul.State.store, Finmap.lookup_insert_of_ne,
+      hCountNeNewCount, hLookupCountStore]
+  have hLookupNewCount :
+      EvmYul.Yul.State.lookup? "newCount" withNewCount = some newValue := by
+    simp [withNewCount, storeWithNewCount, EvmYul.Yul.State.lookup?,
+      EvmYul.Yul.State.store, Finmap.lookup_insert]
+  have hTailBlock :
+      EvmYul.Yul.exec (fuel + 37) (.Block tailAfterNewCount)
+          (some contract) withNewCount =
+        .error (EvmYul.Yul.Exception.Revert revertState) := by
+    have hTail :=
+      exec_block_nativeGeneratedCheckedAddTail_revert_guard
+        (fuel + 2) (some contract) sharedCount storeWithNewCount writeSlot
+        errSelector errLen errText p.2 newValue
+        (by simpa [withNewCount] using hLookupCountNew)
+        (by simpa [withNewCount] using hLookupNewCount)
+        (by simpa [shared, p, newValue] using hGuardNonzero)
+    simpa [tailAfterNewCount, withNewCount, shared0, shared1, shared2,
+      shared3, revertState, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm]
+      using hTail
+  have hTailSeqAfterNewCount :
+      EvmYul.Yul.execSeq (fuel + 36) tailAfterNewCount (some contract)
+          withNewCount =
+        .error (EvmYul.Yul.Exception.Revert revertState) := by
+    have hBlock :
+        EvmYul.Yul.exec (Nat.succ (fuel + 36)) (.Block tailAfterNewCount)
+            (some contract) withNewCount =
+          .error (EvmYul.Yul.Exception.Revert revertState) := by
+      simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hTailBlock
+    exact
+      Native.execSeq_of_exec_block_error (fuel + 36) tailAfterNewCount
+        (some contract) withNewCount
+        (EvmYul.Yul.Exception.Revert revertState) hBlock
+  have hAfterCountBlock :
+      EvmYul.Yul.exec (fuel + 38) (.Block tailAfterCount) (some contract)
+          withCount =
+        .error (EvmYul.Yul.Exception.Revert revertState) := by
+    have hFuel : fuel + 38 = (fuel + 36) + 2 := by omega
+    rw [hFuel]
+    simpa [tailAfterCount] using
+      (Native.exec_block_cons_tail_error (fuel + 36)
+        (.Let ["newCount"] (some (lowerExprNative
+          (.call "add" [.ident "count", .lit delta]))))
+        tailAfterNewCount (some contract) withCount withNewCount
+        (EvmYul.Yul.Exception.Revert revertState) hHeadNewCount
+        hTailSeqAfterNewCount)
+  have hTailSeqAfterCount :
+      EvmYul.Yul.execSeq (fuel + 37) tailAfterCount (some contract)
+          withCount =
+        .error (EvmYul.Yul.Exception.Revert revertState) := by
+    have hBlock :
+        EvmYul.Yul.exec (Nat.succ (fuel + 37)) (.Block tailAfterCount)
+            (some contract) withCount =
+          .error (EvmYul.Yul.Exception.Revert revertState) := by
+      simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+        hAfterCountBlock
+    exact
+      Native.execSeq_of_exec_block_error (fuel + 37) tailAfterCount
+        (some contract) withCount
+        (EvmYul.Yul.Exception.Revert revertState) hBlock
+  have hFuel : fuel + 39 = (fuel + 37) + 2 := by omega
+  rw [hFuel]
+  simpa [nativeGeneratedCheckedAddSloadLitSstoreLitStopBody,
+    nativeGeneratedSstoreLitIdentStopBody, tailAfterCount,
+    tailAfterNewCount, withCount, withNewCount, initialWithStore, shared, p,
+    sharedCount, storeWithCount, newValue, storeWithNewCount, shared0,
+    shared1, shared2, shared3, revertState] using
+    (Native.exec_block_cons_tail_error (fuel + 37)
+      (.Let ["count"] (some (lowerExprNative
+        (.call "sload" [.lit writeSlot]))))
+      tailAfterCount (some contract) initialWithStore withCount
+      (EvmYul.Yul.Exception.Revert revertState) hHeadCount
+      hTailSeqAfterCount)
 
 private theorem exec_block_nativeGeneratedOwnerGuardCalldataload4MaskSstoreLitStopBody_success_markedPrefix
     (fuel : Nat) (contract : EvmYul.Yul.Ast.YulContract)
@@ -34961,6 +35702,36 @@ private theorem checkedSubSourceBody_eq_ir_list
   simp [checkedSubSloadLitSstoreLitStopSourceBody,
     checkedSubUnderflowConditionSource, ownerGuardRevertSourceBody]
 
+private theorem checkedAddSourceBody_eq_ir_list
+    (writeSlot delta errSelector errLen errText : Nat) :
+    checkedAddSloadLitSstoreLitStopSourceBody writeSlot delta errSelector
+        errLen errText =
+      [Yul.YulStmt.let_ "count"
+        (Yul.YulExpr.call "sload" [Yul.YulExpr.lit writeSlot]),
+       Yul.YulStmt.let_ "newCount" (Yul.YulExpr.call "add" [
+          Yul.YulExpr.ident "count",
+          Yul.YulExpr.lit delta]),
+       Yul.YulStmt.if_ (Yul.YulExpr.call "iszero" [
+          Yul.YulExpr.call "gt" [
+            Yul.YulExpr.ident "newCount",
+            Yul.YulExpr.ident "count"]])
+        [Yul.YulStmt.exprStmt (Yul.YulExpr.call "mstore"
+            [Yul.YulExpr.lit 0, Yul.YulExpr.hex errSelector]),
+         Yul.YulStmt.exprStmt (Yul.YulExpr.call "mstore"
+            [Yul.YulExpr.lit 4, Yul.YulExpr.lit 32]),
+         Yul.YulStmt.exprStmt (Yul.YulExpr.call "mstore"
+            [Yul.YulExpr.lit 36, Yul.YulExpr.lit errLen]),
+         Yul.YulStmt.exprStmt (Yul.YulExpr.call "mstore"
+            [Yul.YulExpr.lit 68, Yul.YulExpr.hex errText]),
+         Yul.YulStmt.exprStmt (Yul.YulExpr.call "revert"
+            [Yul.YulExpr.lit 0, Yul.YulExpr.lit 100])],
+       Yul.YulStmt.exprStmt (Yul.YulExpr.call "sstore" [
+        Yul.YulExpr.lit writeSlot,
+        Yul.YulExpr.ident "newCount"]),
+       Yul.YulStmt.exprStmt (Yul.YulExpr.call "stop" [])] := by
+  simp [checkedAddSloadLitSstoreLitStopSourceBody,
+    checkedAddOverflowConditionSource, ownerGuardRevertSourceBody]
+
 private theorem nativeResultsMatchOn_execIRFunction_checked_sub_sload_lit_sstore_lit_stop_success_markedPrefix
     (irContract : IRContract)
     (tx : IRTransaction)
@@ -35165,6 +35936,229 @@ private theorem nativeResultsMatchOn_execIRFunction_checked_sub_sload_lit_sstore
   have hIR :=
     Compiler.Proofs.IRGeneration.execIRFunction_checked_sub_sload_lit_sstore_lit_stop_revert
       fn tx state writeSlot delta errSelector errLen errText hUnderflow
+      hBodyIR
+  rw [hIR]
+  simp [nativeResultsMatchOn, Native.nativeResultsMatchOn]
+
+private theorem nativeResultsMatchOn_execIRFunction_checked_add_sload_lit_sstore_lit_stop_success_markedPrefix
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (nativeContract : EvmYul.Yul.Ast.YulContract)
+    (fn : IRFunction)
+    (switchId : Nat)
+    (store : EvmYul.Yul.VarStore)
+    (writeSlot delta errSelector errLen errText : Nat)
+    (hWriteSlotBaseline :
+      writeSlot ∈ Native.materializedStorageSlots
+        (Compiler.runtimeCode irContract) [])
+    (hNoOverflow :
+      EvmYul.UInt256.ofNat
+          (state.storage (IRStorageSlot.ofNat writeSlot)).toNat <
+        EvmYul.UInt256.ofNat
+          ((EvmYul.UInt256.add
+            (EvmYul.UInt256.ofNat
+              (state.storage (IRStorageSlot.ofNat writeSlot)).toNat)
+            (EvmYul.UInt256.ofNat delta)).toNat))
+    (hBody :
+      fn.body =
+        checkedAddSloadLitSstoreLitStopSourceBody writeSlot delta errSelector
+          errLen errText) :
+    let yulTx := YulTransaction.ofIR tx
+    let slots := Native.materializedStorageSlots
+        (Compiler.runtimeCode irContract) observableSlots
+    let markedStore :=
+      (((store.insert (nativeSwitchDiscrTempName switchId)
+        (EvmYul.UInt256.ofNat
+          (yulTx.functionSelector % Compiler.Constants.selectorModulus))).insert
+        (nativeSwitchMatchedTempName switchId)
+        (EvmYul.UInt256.ofNat 0)).insert
+        (nativeSwitchMatchedTempName switchId)
+        (EvmYul.UInt256.ofNat 1))
+    let shared :=
+      Native.nativeSwitchPostInitFreeMemorySharedState
+        nativeContract yulTx state.storage slots
+    let p := shared.sload (EvmYul.UInt256.ofNat writeSlot)
+    let sharedCount : EvmYul.SharedState .Yul := { shared with toState := p.1 }
+    let storeWithCount := markedStore.insert "count" p.2
+    let newValue := EvmYul.UInt256.add p.2 (EvmYul.UInt256.ofNat delta)
+    let storeWithNewCount := storeWithCount.insert "newCount" newValue
+    let sharedStored : EvmYul.SharedState .Yul :=
+      { sharedCount with
+        toState :=
+          sharedCount.toState.sstore (EvmYul.UInt256.ofNat writeSlot)
+            newValue }
+    let haltState :=
+      (EvmYul.Yul.State.Ok sharedStored storeWithNewCount).setMachineState
+        ((EvmYul.Yul.State.Ok sharedStored storeWithNewCount).toMachineState.setHReturn
+          ByteArray.empty)
+    nativeResultsMatchOn observableSlots
+      (execIRFunction fn tx.args (applyIRTransactionContext tx state))
+      (.ok
+        (Native.projectResult yulTx state.storage state.events
+          (.error (EvmYul.Yul.Exception.YulHalt haltState ⟨0⟩)))) := by
+  intro yulTx slots markedStore shared p sharedCount storeWithCount newValue
+    storeWithNewCount sharedStored haltState
+  let updateNat :=
+    (EvmYul.UInt256.add
+      (EvmYul.UInt256.ofNat
+        (state.storage (IRStorageSlot.ofNat writeSlot)).toNat)
+      (EvmYul.UInt256.ofNat delta)).toNat
+  have hBodyIR :
+      fn.body = [
+        Yul.YulStmt.let_ "count"
+          (Yul.YulExpr.call "sload" [Yul.YulExpr.lit writeSlot]),
+        Yul.YulStmt.let_ "newCount" (Yul.YulExpr.call "add" [
+          Yul.YulExpr.ident "count",
+          Yul.YulExpr.lit delta]),
+        Yul.YulStmt.if_ (Yul.YulExpr.call "iszero" [
+          Yul.YulExpr.call "gt" [
+            Yul.YulExpr.ident "newCount",
+            Yul.YulExpr.ident "count"]])
+          [Yul.YulStmt.exprStmt (Yul.YulExpr.call "mstore"
+              [Yul.YulExpr.lit 0, Yul.YulExpr.hex errSelector]),
+           Yul.YulStmt.exprStmt (Yul.YulExpr.call "mstore"
+              [Yul.YulExpr.lit 4, Yul.YulExpr.lit 32]),
+           Yul.YulStmt.exprStmt (Yul.YulExpr.call "mstore"
+              [Yul.YulExpr.lit 36, Yul.YulExpr.lit errLen]),
+           Yul.YulStmt.exprStmt (Yul.YulExpr.call "mstore"
+              [Yul.YulExpr.lit 68, Yul.YulExpr.hex errText]),
+           Yul.YulStmt.exprStmt (Yul.YulExpr.call "revert"
+              [Yul.YulExpr.lit 0, Yul.YulExpr.lit 100])],
+        Yul.YulStmt.exprStmt (Yul.YulExpr.call "sstore" [
+          Yul.YulExpr.lit writeSlot,
+          Yul.YulExpr.ident "newCount"]),
+        Yul.YulStmt.exprStmt (Yul.YulExpr.call "stop" [])] := by
+    rw [hBody]
+    exact checkedAddSourceBody_eq_ir_list writeSlot delta errSelector errLen
+      errText
+  have hIR :=
+    Compiler.Proofs.IRGeneration.execIRFunction_checked_add_sload_lit_sstore_lit_stop_success
+      fn tx state writeSlot delta errSelector errLen errText hNoOverflow
+      hBodyIR
+  rw [hIR]
+  simp only [nativeResultsMatchOn, Native.nativeResultsMatchOn]
+  refine ⟨rfl, rfl, ?_, ?_⟩
+  · intro slot hslot
+    have hslot' : slot ∈ slots := by
+      simp [slots, Native.materializedStorageSlots, hslot]
+    have hWriteSlot : writeSlot ∈ slots := by
+      simp [slots, Native.materializedStorageSlots] at hWriteSlotBaseline ⊢
+      exact hWriteSlotBaseline.elim (fun hZero => Or.inl hZero)
+        (fun hRead => Or.inr (Or.inl hRead))
+    have hp :
+        p.2 = state.storage (IRStorageSlot.ofNat writeSlot) := by
+      have hload :=
+        Native.initialState_sload_materializedSlot_value
+          nativeContract yulTx state.storage slots writeSlot hWriteSlot
+      simpa [p, shared, StateBridge.natToUInt256] using hload
+    have hValue :
+        newValue = StateBridge.natToUInt256 updateNat := by
+      have hStorageWord :
+          EvmYul.UInt256.ofNat
+              (state.storage (IRStorageSlot.ofNat writeSlot)).toNat =
+            state.storage (IRStorageSlot.ofNat writeSlot) :=
+        uint256_ofNat_toNat
+          (state.storage (IRStorageSlot.ofNat writeSlot))
+      change
+        EvmYul.UInt256.add p.2 (EvmYul.UInt256.ofNat delta) =
+          EvmYul.UInt256.ofNat updateNat
+      rw [hp]
+      change
+        EvmYul.UInt256.add (state.storage (IRStorageSlot.ofNat writeSlot))
+            (EvmYul.UInt256.ofNat delta) =
+          EvmYul.UInt256.ofNat
+            ((EvmYul.UInt256.add
+              (EvmYul.UInt256.ofNat
+                (state.storage (IRStorageSlot.ofNat writeSlot)).toNat)
+              (EvmYul.UInt256.ofNat delta)).toNat)
+      conv_lhs =>
+        rw [← hStorageWord]
+      exact
+        (uint256_ofNat_toNat
+          (EvmYul.UInt256.add
+            (EvmYul.UInt256.ofNat
+              (state.storage (IRStorageSlot.ofNat writeSlot)).toNat)
+            (EvmYul.UInt256.ofNat delta))).symm
+    have hNative :=
+      projectStorageFromState_sload_sstore_lit_initialState_materialized
+        nativeContract yulTx state.storage slots storeWithNewCount writeSlot
+        updateNat slot hslot'
+    simpa [haltState, sharedStored, sharedCount, p, shared, markedStore,
+      storeWithCount, storeWithNewCount,
+      Native.nativeSwitchPostInitFreeMemorySharedState,
+      EvmYul.Yul.State.setMachineState,
+      EvmYul.Yul.State.toMachineState, EvmYul.Yul.State.setState,
+      hValue] using hNative.symm
+  · simp [haltState, sharedStored, sharedCount, p, shared, markedStore,
+      storeWithCount, storeWithNewCount, Native.projectLogsFromState,
+      Native.nativeSwitchPostInitFreeMemorySharedState,
+      Native.initialState, StateBridge.toSharedState, YulState.initial,
+      EvmYul.Yul.State.sharedState, EvmYul.Yul.State.setMachineState,
+      EvmYul.Yul.State.toMachineState, EvmYul.Yul.State.setState,
+      EvmYul.State.sload, EvmYul.State.sstore,
+      EvmYul.State.addAccessedStorageKey,
+      EvmYul.State.setAccount, EvmYul.State.lookupAccount,
+      EvmYul.Account.updateStorage,
+      EvmYul.Substate.addAccessedStorageKey, Option.option]
+    split <;> rfl
+
+private theorem nativeResultsMatchOn_execIRFunction_checked_add_sload_lit_sstore_lit_stop_revert_markedPrefix
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (fn : IRFunction)
+    (writeSlot delta errSelector errLen errText : Nat)
+    (revertState : EvmYul.Yul.State)
+    (hOverflow :
+      ¬ EvmYul.UInt256.ofNat
+          (state.storage (IRStorageSlot.ofNat writeSlot)).toNat <
+        EvmYul.UInt256.ofNat
+          ((EvmYul.UInt256.add
+            (EvmYul.UInt256.ofNat
+              (state.storage (IRStorageSlot.ofNat writeSlot)).toNat)
+            (EvmYul.UInt256.ofNat delta)).toNat))
+    (hBody :
+      fn.body =
+        checkedAddSloadLitSstoreLitStopSourceBody writeSlot delta errSelector
+          errLen errText) :
+    nativeResultsMatchOn observableSlots
+      (execIRFunction fn tx.args (applyIRTransactionContext tx state))
+      (.ok
+        (Native.projectResult (YulTransaction.ofIR tx) state.storage
+          state.events (.error (EvmYul.Yul.Exception.Revert revertState)))) := by
+  have hBodyIR :
+      fn.body = [
+        Yul.YulStmt.let_ "count"
+          (Yul.YulExpr.call "sload" [Yul.YulExpr.lit writeSlot]),
+        Yul.YulStmt.let_ "newCount" (Yul.YulExpr.call "add" [
+          Yul.YulExpr.ident "count",
+          Yul.YulExpr.lit delta]),
+        Yul.YulStmt.if_ (Yul.YulExpr.call "iszero" [
+          Yul.YulExpr.call "gt" [
+            Yul.YulExpr.ident "newCount",
+            Yul.YulExpr.ident "count"]])
+          [Yul.YulStmt.exprStmt (Yul.YulExpr.call "mstore"
+              [Yul.YulExpr.lit 0, Yul.YulExpr.hex errSelector]),
+           Yul.YulStmt.exprStmt (Yul.YulExpr.call "mstore"
+              [Yul.YulExpr.lit 4, Yul.YulExpr.lit 32]),
+           Yul.YulStmt.exprStmt (Yul.YulExpr.call "mstore"
+              [Yul.YulExpr.lit 36, Yul.YulExpr.lit errLen]),
+           Yul.YulStmt.exprStmt (Yul.YulExpr.call "mstore"
+              [Yul.YulExpr.lit 68, Yul.YulExpr.hex errText]),
+           Yul.YulStmt.exprStmt (Yul.YulExpr.call "revert"
+              [Yul.YulExpr.lit 0, Yul.YulExpr.lit 100])],
+        Yul.YulStmt.exprStmt (Yul.YulExpr.call "sstore" [
+          Yul.YulExpr.lit writeSlot,
+          Yul.YulExpr.ident "newCount"]),
+        Yul.YulStmt.exprStmt (Yul.YulExpr.call "stop" [])] := by
+    rw [hBody]
+    exact checkedAddSourceBody_eq_ir_list writeSlot delta errSelector errLen
+      errText
+  have hIR :=
+    Compiler.Proofs.IRGeneration.execIRFunction_checked_add_sload_lit_sstore_lit_stop_revert
+      fn tx state writeSlot delta errSelector errLen errText hOverflow
       hBodyIR
   rw [hIR]
   simp [nativeResultsMatchOn, Native.nativeResultsMatchOn]
@@ -36843,6 +37837,15 @@ private theorem checkedSubSloadLitSstoreLitStopSourceBody_size_ge_33
     checkedSubUnderflowConditionSource, ownerGuardRevertSourceBody]
   omega
 
+private theorem checkedAddSloadLitSstoreLitStopSourceBody_size_ge_35
+    (writeSlot delta errSelector errLen errText : Nat) :
+    35 ≤ sizeOf
+      (checkedAddSloadLitSstoreLitStopSourceBody writeSlot delta errSelector
+        errLen errText) := by
+  simp [checkedAddSloadLitSstoreLitStopSourceBody,
+    checkedAddOverflowConditionSource, ownerGuardRevertSourceBody]
+  omega
+
 private theorem checked_sub_condition_zero_of_no_underflow
     (irContract : IRContract)
     (tx : IRTransaction)
@@ -36958,6 +37961,218 @@ private theorem checked_sub_condition_nonzero_of_underflow
     simpa [EvmYul.UInt256.lt, EvmYul.UInt256.fromBool, hDecide]
       using hOneNeZero
   exact hConcrete (by simpa [hp] using hZero)
+
+private theorem checked_add_condition_zero_of_no_overflow
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (nativeContract : EvmYul.Yul.Ast.YulContract)
+    (writeSlot delta : Nat)
+    (hWriteSlotBaseline :
+      writeSlot ∈ Native.materializedStorageSlots
+        (Compiler.runtimeCode irContract) [])
+    (hNoOverflow :
+      EvmYul.UInt256.ofNat
+          (state.storage (IRStorageSlot.ofNat writeSlot)).toNat <
+        EvmYul.UInt256.ofNat
+          ((EvmYul.UInt256.add
+            (EvmYul.UInt256.ofNat
+              (state.storage (IRStorageSlot.ofNat writeSlot)).toNat)
+            (EvmYul.UInt256.ofNat delta)).toNat)) :
+    let yulTx := YulTransaction.ofIR tx
+    let slots := Native.materializedStorageSlots
+        (Compiler.runtimeCode irContract) observableSlots
+    let shared :=
+      Native.nativeSwitchPostInitFreeMemorySharedState
+        nativeContract yulTx state.storage slots
+    let p := shared.sload (EvmYul.UInt256.ofNat writeSlot)
+    let newValue := EvmYul.UInt256.add p.2 (EvmYul.UInt256.ofNat delta)
+    EvmYul.UInt256.isZero (EvmYul.UInt256.gt newValue p.2) =
+      (⟨0⟩ : EvmYul.UInt256) := by
+  intro yulTx slots shared p newValue
+  have hWriteSlot : writeSlot ∈ slots := by
+    simp [slots, Native.materializedStorageSlots] at hWriteSlotBaseline ⊢
+    exact hWriteSlotBaseline.elim (fun hZero => Or.inl hZero)
+      (fun hRead => Or.inr (Or.inl hRead))
+  have hp :
+      p.2 = state.storage (IRStorageSlot.ofNat writeSlot) := by
+    have hload :=
+      Native.initialState_sload_materializedSlot_value
+        nativeContract yulTx state.storage slots writeSlot hWriteSlot
+    simpa [p, shared, StateBridge.natToUInt256] using hload
+  have hStorageWord :
+      EvmYul.UInt256.ofNat
+          (state.storage (IRStorageSlot.ofNat writeSlot)).toNat =
+        state.storage (IRStorageSlot.ofNat writeSlot) :=
+    uint256_ofNat_toNat (state.storage (IRStorageSlot.ofNat writeSlot))
+  have hAddWord :
+      EvmYul.UInt256.ofNat
+          ((EvmYul.UInt256.add
+            (EvmYul.UInt256.ofNat
+              (state.storage (IRStorageSlot.ofNat writeSlot)).toNat)
+            (EvmYul.UInt256.ofNat delta)).toNat) =
+        EvmYul.UInt256.add
+          (EvmYul.UInt256.ofNat
+            (state.storage (IRStorageSlot.ofNat writeSlot)).toNat)
+          (EvmYul.UInt256.ofNat delta) :=
+    uint256_ofNat_toNat
+      (EvmYul.UInt256.add
+        (EvmYul.UInt256.ofNat
+          (state.storage (IRStorageSlot.ofNat writeSlot)).toNat)
+        (EvmYul.UInt256.ofNat delta))
+  have hAddWordNative :
+      EvmYul.UInt256.ofNat
+          ((EvmYul.UInt256.add
+            (state.storage (IRStorageSlot.ofNat writeSlot))
+            (EvmYul.UInt256.ofNat delta)).toNat) =
+        EvmYul.UInt256.add
+          (state.storage (IRStorageSlot.ofNat writeSlot))
+          (EvmYul.UInt256.ofNat delta) := by
+    exact
+      uint256_ofNat_toNat
+        (EvmYul.UInt256.add
+          (state.storage (IRStorageSlot.ofNat writeSlot))
+          (EvmYul.UInt256.ofNat delta))
+  have hLtNative :
+      state.storage (IRStorageSlot.ofNat writeSlot) <
+        EvmYul.UInt256.add
+          (state.storage (IRStorageSlot.ofNat writeSlot))
+          (EvmYul.UInt256.ofNat delta) := by
+    simpa [hStorageWord, hAddWordNative] using hNoOverflow
+  have hDecide :
+      decide
+        (EvmYul.UInt256.add
+            (state.storage (IRStorageSlot.ofNat writeSlot))
+            (EvmYul.UInt256.ofNat delta) >
+          state.storage (IRStorageSlot.ofNat writeSlot)) = true := by
+    simpa [GT.gt] using hLtNative
+  have hGt :
+      EvmYul.UInt256.gt
+          (EvmYul.UInt256.add
+            (state.storage (IRStorageSlot.ofNat writeSlot))
+            (EvmYul.UInt256.ofNat delta))
+          (state.storage (IRStorageSlot.ofNat writeSlot)) =
+        EvmYul.UInt256.ofNat 1 := by
+    simp [EvmYul.UInt256.gt, EvmYul.UInt256.fromBool, hDecide]
+  have hOneIsZero :
+      EvmYul.UInt256.isZero (EvmYul.UInt256.ofNat 1) =
+        (⟨0⟩ : EvmYul.UInt256) := by
+    decide
+  simpa [newValue, hp, hGt] using hOneIsZero
+
+private theorem checked_add_condition_nonzero_of_overflow
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (nativeContract : EvmYul.Yul.Ast.YulContract)
+    (writeSlot delta : Nat)
+    (hWriteSlotBaseline :
+      writeSlot ∈ Native.materializedStorageSlots
+        (Compiler.runtimeCode irContract) [])
+    (hOverflow :
+      ¬ EvmYul.UInt256.ofNat
+          (state.storage (IRStorageSlot.ofNat writeSlot)).toNat <
+        EvmYul.UInt256.ofNat
+          ((EvmYul.UInt256.add
+            (EvmYul.UInt256.ofNat
+              (state.storage (IRStorageSlot.ofNat writeSlot)).toNat)
+            (EvmYul.UInt256.ofNat delta)).toNat)) :
+    let yulTx := YulTransaction.ofIR tx
+    let slots := Native.materializedStorageSlots
+        (Compiler.runtimeCode irContract) observableSlots
+    let shared :=
+      Native.nativeSwitchPostInitFreeMemorySharedState
+        nativeContract yulTx state.storage slots
+    let p := shared.sload (EvmYul.UInt256.ofNat writeSlot)
+    let newValue := EvmYul.UInt256.add p.2 (EvmYul.UInt256.ofNat delta)
+    EvmYul.UInt256.isZero (EvmYul.UInt256.gt newValue p.2) ≠
+      (⟨0⟩ : EvmYul.UInt256) := by
+  intro yulTx slots shared p newValue hZero
+  have hWriteSlot : writeSlot ∈ slots := by
+    simp [slots, Native.materializedStorageSlots] at hWriteSlotBaseline ⊢
+    exact hWriteSlotBaseline.elim (fun hZero => Or.inl hZero)
+      (fun hRead => Or.inr (Or.inl hRead))
+  have hp :
+      p.2 = state.storage (IRStorageSlot.ofNat writeSlot) := by
+    have hload :=
+      Native.initialState_sload_materializedSlot_value
+        nativeContract yulTx state.storage slots writeSlot hWriteSlot
+    simpa [p, shared, StateBridge.natToUInt256] using hload
+  have hStorageWord :
+      EvmYul.UInt256.ofNat
+          (state.storage (IRStorageSlot.ofNat writeSlot)).toNat =
+        state.storage (IRStorageSlot.ofNat writeSlot) :=
+    uint256_ofNat_toNat (state.storage (IRStorageSlot.ofNat writeSlot))
+  have hAddWord :
+      EvmYul.UInt256.ofNat
+          ((EvmYul.UInt256.add
+            (EvmYul.UInt256.ofNat
+              (state.storage (IRStorageSlot.ofNat writeSlot)).toNat)
+            (EvmYul.UInt256.ofNat delta)).toNat) =
+        EvmYul.UInt256.add
+          (EvmYul.UInt256.ofNat
+            (state.storage (IRStorageSlot.ofNat writeSlot)).toNat)
+          (EvmYul.UInt256.ofNat delta) :=
+    uint256_ofNat_toNat
+      (EvmYul.UInt256.add
+        (EvmYul.UInt256.ofNat
+          (state.storage (IRStorageSlot.ofNat writeSlot)).toNat)
+        (EvmYul.UInt256.ofNat delta))
+  have hAddWordNative :
+      EvmYul.UInt256.ofNat
+          ((EvmYul.UInt256.add
+            (state.storage (IRStorageSlot.ofNat writeSlot))
+            (EvmYul.UInt256.ofNat delta)).toNat) =
+        EvmYul.UInt256.add
+          (state.storage (IRStorageSlot.ofNat writeSlot))
+          (EvmYul.UInt256.ofNat delta) := by
+    exact
+      uint256_ofNat_toNat
+        (EvmYul.UInt256.add
+          (state.storage (IRStorageSlot.ofNat writeSlot))
+          (EvmYul.UInt256.ofNat delta))
+  have hNotLtNative :
+      ¬ state.storage (IRStorageSlot.ofNat writeSlot) <
+        EvmYul.UInt256.add
+          (state.storage (IRStorageSlot.ofNat writeSlot))
+          (EvmYul.UInt256.ofNat delta) := by
+    intro hLtNative
+    exact hOverflow (by simpa [hStorageWord, hAddWordNative] using hLtNative)
+  have hDecide :
+      decide
+        (EvmYul.UInt256.add
+            (state.storage (IRStorageSlot.ofNat writeSlot))
+            (EvmYul.UInt256.ofNat delta) >
+          state.storage (IRStorageSlot.ofNat writeSlot)) = false := by
+    by_cases h :
+        EvmYul.UInt256.add
+            (state.storage (IRStorageSlot.ofNat writeSlot))
+            (EvmYul.UInt256.ofNat delta) >
+          state.storage (IRStorageSlot.ofNat writeSlot)
+    · exact False.elim (hNotLtNative (by simpa [GT.gt] using h))
+    · simp [h]
+  have hGt :
+      EvmYul.UInt256.gt
+          (EvmYul.UInt256.add
+            (state.storage (IRStorageSlot.ofNat writeSlot))
+            (EvmYul.UInt256.ofNat delta))
+          (state.storage (IRStorageSlot.ofNat writeSlot)) =
+        (⟨0⟩ : EvmYul.UInt256) := by
+    change
+      EvmYul.UInt256.gt
+          (EvmYul.UInt256.add
+            (state.storage (IRStorageSlot.ofNat writeSlot))
+            (EvmYul.UInt256.ofNat delta))
+          (state.storage (IRStorageSlot.ofNat writeSlot)) =
+        EvmYul.UInt256.ofNat 0
+    simp [EvmYul.UInt256.gt, EvmYul.UInt256.fromBool, hDecide]
+  have hConcrete :
+      EvmYul.UInt256.isZero (⟨0⟩ : EvmYul.UInt256) ≠
+        (⟨0⟩ : EvmYul.UInt256) := by
+    decide
+  exact hConcrete (by simpa [newValue, hp, hGt] using hZero)
 
 private theorem NativeGeneratedSelectedUserBodyErrorExecBridgeAtFuel.of_checked_sub_sload_lit_sstore_lit_stop
     {spec : CompilationModel.CompilationModel} {selectors : List Nat}
@@ -37206,6 +38421,266 @@ theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_checked_sub_sload_l
   NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_error irContract tx
     state observableSlots
     (NativeGeneratedSelectedUserBodyErrorExecBridgeAtFuel.of_checked_sub_sload_lit_sstore_lit_stop
+      irContract tx state observableSlots writeSlot delta errSelector errLen
+      errText hCompile hSupported hWriteSlotBaseline hBody)
+
+private theorem NativeGeneratedSelectedUserBodyErrorExecBridgeAtFuel.of_checked_add_sload_lit_sstore_lit_stop
+    {spec : CompilationModel.CompilationModel} {selectors : List Nat}
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (writeSlot delta errSelector errLen errText : Nat)
+    (hCompile : CompilationModel.compile spec selectors = .ok irContract)
+    (hSupported : SupportedSpec spec selectors)
+    (hWriteSlotBaseline :
+      writeSlot ∈ Native.materializedStorageSlots
+        (Compiler.runtimeCode irContract) [])
+    (hBody :
+      ∀ fn,
+        irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+          some fn →
+        fn.body =
+          checkedAddSloadLitSstoreLitStopSourceBody writeSlot delta
+            errSelector errLen errText) :
+    NativeGeneratedSelectedUserBodyErrorExecBridgeAtFuel irContract tx state
+      observableSlots := by
+  intro nativeContract fn reservedNames n0 cases' bodyNative bodyEnd
+    userBodyStart _hLowerRuntime hFind hLoweredCases hUserBodyLower
+    _hguards _hArgs
+  rcases hLoweredCases with ⟨midN, hLowerCases⟩
+  have hBodyFn := hBody fn hFind
+  have hLowerConcrete :
+      lowerStmtsNativeWithSwitchIds reservedNames userBodyStart
+          (checkedAddSloadLitSstoreLitStopSourceBody writeSlot delta
+            errSelector errLen errText) =
+        .ok
+          (nativeGeneratedCheckedAddSloadLitSstoreLitStopBody writeSlot delta
+            errSelector errLen errText, userBodyStart) :=
+    lowerStmtsNativeWithSwitchIds_checked_add_sload_lit_sstore_lit_stop
+      reservedNames userBodyStart writeSlot delta errSelector errLen errText
+  have hLowerPair :
+      (bodyNative, bodyEnd) =
+        (nativeGeneratedCheckedAddSloadLitSstoreLitStopBody writeSlot delta
+          errSelector errLen errText, userBodyStart) := by
+    rw [hBodyFn, hLowerConcrete] at hUserBodyLower
+    simpa using hUserBodyLower.symm
+  rcases hLowerPair with ⟨rfl, rfl⟩
+  let switchId := freshNativeSwitchId reservedNames n0
+  let yulTx := YulTransaction.ofIR tx
+  let slots := Native.materializedStorageSlots
+      (Compiler.runtimeCode irContract) observableSlots
+  let markedStore :=
+    ((Native.nativeSwitchHasSelectorStore.insert
+      (nativeSwitchDiscrTempName switchId)
+      (EvmYul.UInt256.ofNat
+        (yulTx.functionSelector % Compiler.Constants.selectorModulus))).insert
+      (nativeSwitchMatchedTempName switchId)
+      (EvmYul.UInt256.ofNat 1))
+  let initialWithStore :=
+    Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId
+      nativeContract yulTx state.storage slots switchId
+      Native.nativeSwitchHasSelectorStore
+  let shared :=
+    Native.nativeSwitchPostInitFreeMemorySharedState
+      nativeContract yulTx state.storage slots
+  let p := shared.sload (EvmYul.UInt256.ofNat writeSlot)
+  let sharedCount : EvmYul.SharedState .Yul := { shared with toState := p.1 }
+  let storeWithCount := markedStore.insert "count" p.2
+  let newValue := EvmYul.UInt256.add p.2 (EvmYul.UInt256.ofNat delta)
+  let storeWithNewCount := storeWithCount.insert "newCount" newValue
+  have hBodySize : 35 ≤ sizeOf fn.body := by
+    rw [hBodyFn]
+    exact
+      checkedAddSloadLitSstoreLitStopSourceBody_size_ge_35 writeSlot delta
+        errSelector errLen errText
+  have hFuel29 :
+      ∀ suffix : List (Nat × List EvmYul.Yul.Ast.Stmt),
+        29 ≤ nativeGeneratedSelectorHitUserBodyFuel irContract fn cases' +
+          suffix.length := by
+    intro suffix
+    have hFuelBound :
+        cases'.length + sizeOf fn.body + 24 ≤
+          sizeOf (Compiler.emitYul irContract).runtimeCode := by
+      by_cases hUsesMapping : irContract.usesMapping
+      · have hMapping : irContract.usesMapping = true := by
+          simpa using hUsesMapping
+        exact
+          sizeOf_emitYul_runtimeCode_mapping_ge_lowered_cases_length_plus_selected_body_size_plus24
+            hCompile hSupported hMapping hFind hLowerCases
+      · have hNoMapping : irContract.usesMapping = false :=
+          Bool.eq_false_iff.2 hUsesMapping
+        exact
+          sizeOf_emitYul_runtimeCode_noMapping_ge_lowered_cases_length_plus_selected_body_size_plus24
+            hCompile hSupported hNoMapping hFind hLowerCases
+    dsimp [nativeGeneratedSelectorHitUserBodyFuel, nativeRuntimeDispatcherFuel]
+    by_cases hPayable : fn.payable
+    · simp [hPayable]
+      omega
+    · have hNonPayable : fn.payable = false := Bool.eq_false_iff.2 hPayable
+      simp [hNonPayable]
+      omega
+  by_cases hNoOverflow :
+      EvmYul.UInt256.ofNat
+          (state.storage (IRStorageSlot.ofNat writeSlot)).toNat <
+        EvmYul.UInt256.ofNat
+          ((EvmYul.UInt256.add
+            (EvmYul.UInt256.ofNat
+              (state.storage (IRStorageSlot.ofNat writeSlot)).toNat)
+            (EvmYul.UInt256.ofNat delta)).toNat)
+  · let sharedStored : EvmYul.SharedState .Yul :=
+      { sharedCount with
+        toState :=
+          sharedCount.toState.sstore (EvmYul.UInt256.ofNat writeSlot)
+            newValue }
+    let haltState :=
+      (EvmYul.Yul.State.Ok sharedStored storeWithNewCount).setMachineState
+        ((EvmYul.Yul.State.Ok sharedStored storeWithNewCount).toMachineState.setHReturn
+          ByteArray.empty)
+    let nativeYul :=
+      Native.projectResult yulTx state.storage state.events
+        (.error (EvmYul.Yul.Exception.YulHalt haltState ⟨0⟩))
+    have hGuardZero :
+        let shared :=
+          Native.nativeSwitchPostInitFreeMemorySharedState nativeContract yulTx
+            state.storage slots
+        let p := shared.sload (EvmYul.UInt256.ofNat writeSlot)
+        let newValue := EvmYul.UInt256.add p.2 (EvmYul.UInt256.ofNat delta)
+        EvmYul.UInt256.isZero (EvmYul.UInt256.gt newValue p.2) =
+          (⟨0⟩ : EvmYul.UInt256) := by
+      simpa [yulTx, slots] using
+        (checked_add_condition_zero_of_no_overflow irContract tx state
+          observableSlots nativeContract writeSlot delta hWriteSlotBaseline
+          hNoOverflow)
+    have hPerm :
+        (Native.nativeSwitchPostInitFreeMemorySharedState nativeContract yulTx
+          state.storage slots).executionEnv.perm = true := by
+      simp [Native.nativeSwitchPostInitFreeMemorySharedState,
+        Native.initialState, StateBridge.toSharedState, YulState.initial,
+        EvmYul.Yul.State.sharedState, EvmYul.MachineState.mstore]
+    refine ⟨EvmYul.Yul.Exception.YulHalt haltState ⟨0⟩, nativeYul, ?_, rfl, ?_⟩
+    · intro _pre suffix
+      obtain ⟨fuelBase, hFuelBase⟩ :
+          ∃ fuelBase,
+            nativeGeneratedSelectorHitUserBodyFuel irContract fn cases' +
+              suffix.length = fuelBase + 7 :=
+        ⟨nativeGeneratedSelectorHitUserBodyFuel irContract fn cases' +
+            suffix.length - 7, by
+          have hFuel := hFuel29 suffix
+          omega⟩
+      rw [hFuelBase]
+      simpa [switchId, yulTx, slots, initialWithStore, markedStore, shared,
+        p, sharedCount, storeWithCount, newValue, storeWithNewCount,
+        sharedStored, haltState,
+        Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId,
+        Native.nativeSwitchPostInitFreeMemoryStorePrefixStateForId,
+        Native.nativeSwitchPostInitFreeMemoryState,
+        Native.nativeSwitchPostInitFreeMemorySharedState,
+        Native.nativeSwitchHasSelectorStore,
+        EvmYul.Yul.State.insert, EvmYul.Yul.State.store,
+        Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+        (exec_block_nativeGeneratedCheckedAddSloadLitSstoreLitStopBody_success_markedPrefix
+          fuelBase nativeContract yulTx state.storage slots switchId writeSlot
+          delta errSelector errLen errText hGuardZero hPerm)
+    · simpa [switchId, yulTx, slots, markedStore, shared, p, sharedCount,
+        storeWithCount, newValue, storeWithNewCount, sharedStored, haltState,
+        nativeYul] using
+        (nativeResultsMatchOn_execIRFunction_checked_add_sload_lit_sstore_lit_stop_success_markedPrefix
+          irContract tx state observableSlots nativeContract fn switchId
+          Native.nativeSwitchHasSelectorStore writeSlot delta errSelector
+          errLen errText hWriteSlotBaseline hNoOverflow hBodyFn)
+  · let shared0 : EvmYul.SharedState .Yul :=
+      { sharedCount with
+        toMachineState :=
+          sharedCount.toMachineState.mstore (EvmYul.UInt256.ofNat 0)
+            (EvmYul.UInt256.ofNat errSelector) }
+    let shared1 : EvmYul.SharedState .Yul :=
+      { shared0 with
+        toMachineState :=
+          shared0.toMachineState.mstore (EvmYul.UInt256.ofNat 4)
+            (EvmYul.UInt256.ofNat 32) }
+    let shared2 : EvmYul.SharedState .Yul :=
+      { shared1 with
+        toMachineState :=
+          shared1.toMachineState.mstore (EvmYul.UInt256.ofNat 36)
+            (EvmYul.UInt256.ofNat errLen) }
+    let shared3 : EvmYul.SharedState .Yul :=
+      { shared2 with
+        toMachineState :=
+          shared2.toMachineState.mstore (EvmYul.UInt256.ofNat 68)
+            (EvmYul.UInt256.ofNat errText) }
+    let revertState : EvmYul.Yul.State :=
+      (.Ok shared3 storeWithNewCount : EvmYul.Yul.State).setMachineState
+        ((.Ok shared3 storeWithNewCount : EvmYul.Yul.State).toMachineState.evmRevert
+          (EvmYul.UInt256.ofNat 0) (EvmYul.UInt256.ofNat 100))
+    let nativeYul :=
+      Native.projectResult yulTx state.storage state.events
+        (.error (EvmYul.Yul.Exception.Revert revertState))
+    have hGuardNonzero :
+        let shared :=
+          Native.nativeSwitchPostInitFreeMemorySharedState nativeContract yulTx
+            state.storage slots
+        let p := shared.sload (EvmYul.UInt256.ofNat writeSlot)
+        let newValue := EvmYul.UInt256.add p.2 (EvmYul.UInt256.ofNat delta)
+        EvmYul.UInt256.isZero (EvmYul.UInt256.gt newValue p.2) ≠
+          (⟨0⟩ : EvmYul.UInt256) := by
+      simpa [yulTx, slots] using
+        (checked_add_condition_nonzero_of_overflow irContract tx state
+          observableSlots nativeContract writeSlot delta hWriteSlotBaseline
+          hNoOverflow)
+    refine ⟨EvmYul.Yul.Exception.Revert revertState, nativeYul, ?_, rfl, ?_⟩
+    · intro _pre suffix
+      obtain ⟨fuelBase, hFuelBase⟩ :
+          ∃ fuelBase,
+            nativeGeneratedSelectorHitUserBodyFuel irContract fn cases' +
+              suffix.length = fuelBase + 29 :=
+        ⟨nativeGeneratedSelectorHitUserBodyFuel irContract fn cases' +
+            suffix.length - 29, by
+          have hFuel := hFuel29 suffix
+          omega⟩
+      rw [hFuelBase]
+      simpa [switchId, yulTx, slots, initialWithStore, markedStore, shared,
+        p, sharedCount, storeWithCount, newValue, storeWithNewCount,
+        shared0, shared1, shared2, shared3, revertState,
+        Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId,
+        Native.nativeSwitchPostInitFreeMemoryStorePrefixStateForId,
+        Native.nativeSwitchPostInitFreeMemoryState,
+        Native.nativeSwitchPostInitFreeMemorySharedState,
+        Native.nativeSwitchHasSelectorStore,
+        EvmYul.Yul.State.insert, EvmYul.Yul.State.store,
+        Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+        (exec_block_nativeGeneratedCheckedAddSloadLitSstoreLitStopBody_revert_markedPrefix
+          fuelBase nativeContract yulTx state.storage slots switchId writeSlot
+          delta errSelector errLen errText hGuardNonzero)
+    · simpa [nativeYul] using
+        (nativeResultsMatchOn_execIRFunction_checked_add_sload_lit_sstore_lit_stop_revert_markedPrefix
+          tx state observableSlots fn writeSlot delta errSelector errLen
+          errText revertState hNoOverflow hBodyFn)
+
+theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_checked_add_sload_lit_sstore_lit_stop
+    {spec : CompilationModel.CompilationModel} {selectors : List Nat}
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (writeSlot delta errSelector errLen errText : Nat)
+    (hCompile : CompilationModel.compile spec selectors = .ok irContract)
+    (hSupported : SupportedSpec spec selectors)
+    (hWriteSlotBaseline :
+      writeSlot ∈ Native.materializedStorageSlots
+        (Compiler.runtimeCode irContract) [])
+    (hBody :
+      ∀ fn,
+        irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+          some fn →
+        fn.body =
+          checkedAddSloadLitSstoreLitStopSourceBody writeSlot delta
+            errSelector errLen errText) :
+    NativeGeneratedSelectedUserBodyResultBridgeAtFuel irContract tx state
+      observableSlots :=
+  NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_error irContract tx
+    state observableSlots
+    (NativeGeneratedSelectedUserBodyErrorExecBridgeAtFuel.of_checked_add_sload_lit_sstore_lit_stop
       irContract tx state observableSlots writeSlot delta errSelector errLen
       errText hCompile hSupported hWriteSlotBaseline hBody)
 
@@ -42525,6 +44000,19 @@ inductive NativeGeneratedSelectedUserBodySimpleShape
               fn.body =
                 checkedSubSloadLitSstoreLitStopSourceBody writeSlot delta
                   errSelector errLen errText)
+      | checkedAddSloadLitSstoreLitStop
+          (writeSlot delta errSelector errLen errText : Nat)
+          (hWriteSlotBaseline :
+            writeSlot ∈ Native.materializedStorageSlots
+              (Compiler.runtimeCode irContract) [])
+          (hBody :
+            ∀ fn,
+              irContract.functions.find?
+                  (fun fn => fn.selector == tx.functionSelector) =
+                some fn →
+              fn.body =
+                checkedAddSloadLitSstoreLitStopSourceBody writeSlot delta
+                  errSelector errLen errText)
       | ownerGuardSstoreLitAddSloadLitStop
           (ownerSlot writeSlot delta errSelector errLen errText : Nat)
           (hOwnerSlotBaseline :
@@ -43289,6 +44777,68 @@ theorem body_eq_of_shape?_eq_some
 
 end NativeGeneratedSelectedUserBodyCheckedSubSloadLitSstoreLitStop
 
+private structure NativeGeneratedSelectedUserBodyCheckedAddShape where
+  writeSlot : Nat
+  delta : Nat
+  errSelector : Nat
+  errLen : Nat
+  errText : Nat
+
+namespace NativeGeneratedSelectedUserBodyCheckedAddSloadLitSstoreLitStop
+
+def shape? :
+    List Yul.YulStmt → Option NativeGeneratedSelectedUserBodyCheckedAddShape
+  | [Yul.YulStmt.let_ "count"
+        (Yul.YulExpr.call "sload" [Yul.YulExpr.lit writeSlot]),
+      Yul.YulStmt.let_ "newCount" (Yul.YulExpr.call "add" [
+        Yul.YulExpr.ident "count",
+        Yul.YulExpr.lit delta]),
+      Yul.YulStmt.if_ (Yul.YulExpr.call "iszero" [
+          Yul.YulExpr.call "gt" [
+            Yul.YulExpr.ident "newCount",
+            Yul.YulExpr.ident "count"]])
+        [Yul.YulStmt.exprStmt (Yul.YulExpr.call "mstore"
+            [Yul.YulExpr.lit 0, Yul.YulExpr.hex errSelector]),
+         Yul.YulStmt.exprStmt (Yul.YulExpr.call "mstore"
+            [Yul.YulExpr.lit 4, Yul.YulExpr.lit 32]),
+         Yul.YulStmt.exprStmt (Yul.YulExpr.call "mstore"
+            [Yul.YulExpr.lit 36, Yul.YulExpr.lit errLen]),
+         Yul.YulStmt.exprStmt (Yul.YulExpr.call "mstore"
+            [Yul.YulExpr.lit 68, Yul.YulExpr.hex errText]),
+         Yul.YulStmt.exprStmt (Yul.YulExpr.call "revert"
+            [Yul.YulExpr.lit 0, Yul.YulExpr.lit 100])],
+      Yul.YulStmt.exprStmt (Yul.YulExpr.call "sstore" [
+        Yul.YulExpr.lit writeSlot',
+        Yul.YulExpr.ident "newCount"]),
+      Yul.YulStmt.exprStmt (Yul.YulExpr.call "stop" [])] =>
+      if writeSlot = writeSlot' then
+        some
+          { writeSlot := writeSlot, delta := delta,
+            errSelector := errSelector, errLen := errLen,
+            errText := errText }
+      else
+        none
+  | _ => none
+
+theorem body_eq_of_shape?_eq_some
+    (body : List Yul.YulStmt)
+    (shape : NativeGeneratedSelectedUserBodyCheckedAddShape)
+    (h : shape? body = some shape) :
+    body =
+      checkedAddSloadLitSstoreLitStopSourceBody shape.writeSlot shape.delta
+        shape.errSelector shape.errLen shape.errText := by
+  unfold shape? at h
+  split at h
+  · split at h
+    · rename_i hSlotEq
+      cases h
+      cases hSlotEq
+      rfl
+    · contradiction
+  · contradiction
+
+end NativeGeneratedSelectedUserBodyCheckedAddSloadLitSstoreLitStop
+
 /-- Body-local forms covered by the current checked selected-body bridge. -/
 inductive NativeGeneratedSelectedUserBodySimpleBody :
     List Yul.YulStmt → Prop where
@@ -43655,8 +45205,19 @@ def bodyCheckedInRuntime? (irContract : IRContract)
                               else
                                 false
                           | none =>
-                              NativeGeneratedSelectedUserBodySimpleBody.checked?
-                                body
+                              match
+                                NativeGeneratedSelectedUserBodyCheckedAddSloadLitSstoreLitStop.shape?
+                                  body with
+                              | some shape =>
+                                  if shape.writeSlot ∈
+                                      Native.materializedStorageSlots
+                                        (Compiler.runtimeCode irContract) [] then
+                                    true
+                                  else
+                                    false
+                              | none =>
+                                  NativeGeneratedSelectedUserBodySimpleBody.checked?
+                                    body
 
 /-- Executable checker for the selected function body when a selector hit is
 present. Selector misses satisfy the selected-body shape vacuously. -/
@@ -44138,9 +45699,35 @@ theorem of_checked?
                                         · simp [hWriteSlotBaseline] at hCheck
                                     | none =>
                                         simp [hCheckedSub] at hCheck
-                                        exact
-                                          NativeGeneratedSelectedUserBodySimpleShape.of_simple_body_checked_for_selected
-                                            hFind hCheck
+                                        cases hCheckedAdd :
+                                            NativeGeneratedSelectedUserBodyCheckedAddSloadLitSstoreLitStop.shape?
+                                              body with
+                                        | some shape =>
+                                            simp [hCheckedAdd] at hCheck
+                                            by_cases hWriteSlotBaseline :
+                                                shape.writeSlot ∈
+                                                  Native.materializedStorageSlots
+                                                    (Compiler.runtimeCode
+                                                      irContract) []
+                                            · exact
+                                                NativeGeneratedSelectedUserBodySimpleShape.checkedAddSloadLitSstoreLitStop
+                                                  shape.writeSlot shape.delta
+                                                  shape.errSelector shape.errLen
+                                                  shape.errText
+                                                  hWriteSlotBaseline
+                                                  (by
+                                                    intro fn hFn
+                                                    rw [hFind] at hFn
+                                                    cases hFn
+                                                    exact
+                                                      NativeGeneratedSelectedUserBodyCheckedAddSloadLitSstoreLitStop.body_eq_of_shape?_eq_some
+                                                        body shape hCheckedAdd)
+                                            · simp [hWriteSlotBaseline] at hCheck
+                                        | none =>
+                                            simp [hCheckedAdd] at hCheck
+                                            exact
+                                              NativeGeneratedSelectedUserBodySimpleShape.of_simple_body_checked_for_selected
+                                                hFind hCheck
           · cases hArgs : tx.args with
             | nil =>
                 simp [hStore, hArgs] at hCheck
@@ -44216,6 +45803,12 @@ theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_simple_shape
         hWriteSlotBaseline hBody =>
         exact
           NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_checked_sub_sload_lit_sstore_lit_stop
+            irContract tx state observableSlots writeSlot delta errSelector
+            errLen errText hCompile hSupported hWriteSlotBaseline hBody
+    | checkedAddSloadLitSstoreLitStop writeSlot delta errSelector errLen errText
+        hWriteSlotBaseline hBody =>
+        exact
+          NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_checked_add_sload_lit_sstore_lit_stop
             irContract tx state observableSlots writeSlot delta errSelector
             errLen errText hCompile hSupported hWriteSlotBaseline hBody
     | ownerGuardSstoreLitAddSloadLitStop ownerSlot writeSlot delta errSelector
