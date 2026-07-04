@@ -5935,6 +5935,451 @@ theorem execIRFunction_owner_guard_calldataload4_mask_sstore_lit_stop_revert
   rw [hRev]
   simp [applyIRTransactionContext]
 
+theorem execIRFunction_checked_add_sload_lit_sstore_lit_stop_success
+    (fn : IRFunction) (tx : IRTransaction) (initialState : IRState)
+    (writeSlot delta errSelector errLen errText : Nat)
+    (hNoOverflow :
+      EvmYul.UInt256.ofNat
+          (initialState.storage (IRStorageSlot.ofNat writeSlot)).toNat <
+        EvmYul.UInt256.ofNat
+          ((EvmYul.UInt256.add
+            (EvmYul.UInt256.ofNat
+              (initialState.storage (IRStorageSlot.ofNat writeSlot)).toNat)
+            (EvmYul.UInt256.ofNat delta)).toNat))
+    (hBody : fn.body = [
+      YulStmt.let_ "count" (YulExpr.call "sload" [YulExpr.lit writeSlot]),
+      YulStmt.let_ "newCount" (YulExpr.call "add" [
+        YulExpr.ident "count",
+        YulExpr.lit delta]),
+      YulStmt.if_
+        (YulExpr.call "iszero" [YulExpr.call "gt" [
+          YulExpr.ident "newCount",
+          YulExpr.ident "count"]])
+        [YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 0, YulExpr.hex errSelector]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 4, YulExpr.lit 32]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 36, YulExpr.lit errLen]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 68, YulExpr.hex errText]),
+         YulStmt.exprStmt (YulExpr.call "revert"
+            [YulExpr.lit 0, YulExpr.lit 100])],
+      YulStmt.exprStmt (YulExpr.call "sstore" [
+        YulExpr.lit writeSlot,
+        YulExpr.ident "newCount"]),
+      YulStmt.exprStmt (YulExpr.call "stop" [])]) :
+    execIRFunction fn tx.args (applyIRTransactionContext tx initialState) =
+      { success := true
+        returnValue := none
+        finalStorage :=
+          Compiler.Proofs.abstractStoreStorageOrMapping initialState.storage
+            writeSlot
+            (EvmYul.UInt256.add
+              (EvmYul.UInt256.ofNat
+                (initialState.storage (IRStorageSlot.ofNat writeSlot)).toNat)
+              (EvmYul.UInt256.ofNat delta)).toNat
+        finalMappings :=
+          Compiler.Proofs.storageAsMappings
+            (Compiler.Proofs.abstractStoreStorageOrMapping initialState.storage
+              writeSlot
+              (EvmYul.UInt256.add
+                (EvmYul.UInt256.ofNat
+                  (initialState.storage
+                    (IRStorageSlot.ofNat writeSlot)).toNat)
+                (EvmYul.UInt256.ofNat delta)).toNat)
+        events := initialState.events } := by
+  let body : List YulStmt := [
+      YulStmt.let_ "count" (YulExpr.call "sload" [YulExpr.lit writeSlot]),
+      YulStmt.let_ "newCount" (YulExpr.call "add" [
+        YulExpr.ident "count",
+        YulExpr.lit delta]),
+      YulStmt.if_
+        (YulExpr.call "iszero" [YulExpr.call "gt" [
+          YulExpr.ident "newCount",
+          YulExpr.ident "count"]])
+        [YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 0, YulExpr.hex errSelector]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 4, YulExpr.lit 32]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 36, YulExpr.lit errLen]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 68, YulExpr.hex errText]),
+         YulStmt.exprStmt (YulExpr.call "revert"
+            [YulExpr.lit 0, YulExpr.lit 100])],
+      YulStmt.exprStmt (YulExpr.call "sstore" [
+        YulExpr.lit writeSlot,
+        YulExpr.ident "newCount"]),
+      YulStmt.exprStmt (YulExpr.call "stop" [])]
+  have hbody : ∀ (n : Nat) (s : IRState), 5 ≤ n →
+      EvmYul.UInt256.ofNat
+          (s.storage (IRStorageSlot.ofNat writeSlot)).toNat <
+        EvmYul.UInt256.ofNat
+          ((EvmYul.UInt256.add
+            (EvmYul.UInt256.ofNat
+              (s.storage (IRStorageSlot.ofNat writeSlot)).toNat)
+            (EvmYul.UInt256.ofNat delta)).toNat) →
+      execIRStmts (n + 1) s body =
+        .stop
+          { (s.setVar "count"
+              (s.storage (IRStorageSlot.ofNat writeSlot)).toNat).setVar
+              "newCount"
+              (EvmYul.UInt256.add
+                (EvmYul.UInt256.ofNat
+                  (s.storage (IRStorageSlot.ofNat writeSlot)).toNat)
+                (EvmYul.UInt256.ofNat delta)).toNat with
+            storage :=
+              Compiler.Proofs.abstractStoreStorageOrMapping s.storage
+                writeSlot
+                (EvmYul.UInt256.add
+                  (EvmYul.UInt256.ofNat
+                    (s.storage (IRStorageSlot.ofNat writeSlot)).toNat)
+                  (EvmYul.UInt256.ofNat delta)).toNat } := by
+    intro n s hn hNoOverflowState
+    obtain ⟨k, rfl⟩ : ∃ k, n = k + 5 := ⟨n - 5, by omega⟩
+    simp +decide [body, execIRStmts, execIRStmt, evalIRExpr, evalIRCall,
+      evalIRExprs, evalIRCall_sload_singleton,
+      Compiler.Proofs.abstractLoadStorageOrMapping,
+      Compiler.Proofs.YulGeneration.Backends.evalBuiltinCallWithEvmYulLeanContext,
+      Compiler.Proofs.YulGeneration.Backends.evalBuiltinCallViaEvmYulLean,
+      Compiler.Proofs.YulGeneration.Backends.evalPureBuiltinViaEvmYulLean,
+      IRState.getVar, IRState.setVar, hNoOverflowState]
+  let stateWithParams :=
+    List.foldl (fun st entry => st.setVar entry.1.name entry.2)
+      (applyIRTransactionContext tx initialState) (fn.params.zip tx.args)
+  have hNoOverflowState :
+      EvmYul.UInt256.ofNat
+          (stateWithParams.storage (IRStorageSlot.ofNat writeSlot)).toNat <
+        EvmYul.UInt256.ofNat
+          ((EvmYul.UInt256.add
+            (EvmYul.UInt256.ofNat
+              (stateWithParams.storage
+                (IRStorageSlot.ofNat writeSlot)).toNat)
+            (EvmYul.UInt256.ofNat delta)).toNat) := by
+    simpa [stateWithParams, applyIRTransactionContext,
+      IRState.foldl_setParamVars_storage] using hNoOverflow
+  have hsize : 5 ≤ sizeOf body := by
+    simp [body]
+    omega
+  have hBody' : fn.body = body := by
+    simpa [body] using hBody
+  unfold execIRFunction
+  simp only [hBody']
+  rw [hbody _ stateWithParams hsize hNoOverflowState]
+  simp only [IRState.setVar_events, IRState.foldl_setParamVars_storage,
+    IRState.foldl_setParamVars_events]
+  simp [stateWithParams, applyIRTransactionContext]
+
+theorem execIRFunction_checked_add_sload_lit_sstore_lit_stop_revert
+    (fn : IRFunction) (tx : IRTransaction) (initialState : IRState)
+    (writeSlot delta errSelector errLen errText : Nat)
+    (hOverflow :
+      ¬ EvmYul.UInt256.ofNat
+          (initialState.storage (IRStorageSlot.ofNat writeSlot)).toNat <
+        EvmYul.UInt256.ofNat
+          ((EvmYul.UInt256.add
+            (EvmYul.UInt256.ofNat
+              (initialState.storage (IRStorageSlot.ofNat writeSlot)).toNat)
+            (EvmYul.UInt256.ofNat delta)).toNat))
+    (hBody : fn.body = [
+      YulStmt.let_ "count" (YulExpr.call "sload" [YulExpr.lit writeSlot]),
+      YulStmt.let_ "newCount" (YulExpr.call "add" [
+        YulExpr.ident "count",
+        YulExpr.lit delta]),
+      YulStmt.if_
+        (YulExpr.call "iszero" [YulExpr.call "gt" [
+          YulExpr.ident "newCount",
+          YulExpr.ident "count"]])
+        [YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 0, YulExpr.hex errSelector]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 4, YulExpr.lit 32]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 36, YulExpr.lit errLen]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 68, YulExpr.hex errText]),
+         YulStmt.exprStmt (YulExpr.call "revert"
+            [YulExpr.lit 0, YulExpr.lit 100])],
+      YulStmt.exprStmt (YulExpr.call "sstore" [
+        YulExpr.lit writeSlot,
+        YulExpr.ident "newCount"]),
+      YulStmt.exprStmt (YulExpr.call "stop" [])]) :
+    execIRFunction fn tx.args (applyIRTransactionContext tx initialState) =
+      { success := false
+        returnValue := none
+        finalStorage := initialState.storage
+        finalMappings := Compiler.Proofs.storageAsMappings initialState.storage
+        events := initialState.events } := by
+  let body : List YulStmt := [
+      YulStmt.let_ "count" (YulExpr.call "sload" [YulExpr.lit writeSlot]),
+      YulStmt.let_ "newCount" (YulExpr.call "add" [
+        YulExpr.ident "count",
+        YulExpr.lit delta]),
+      YulStmt.if_
+        (YulExpr.call "iszero" [YulExpr.call "gt" [
+          YulExpr.ident "newCount",
+          YulExpr.ident "count"]])
+        [YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 0, YulExpr.hex errSelector]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 4, YulExpr.lit 32]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 36, YulExpr.lit errLen]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 68, YulExpr.hex errText]),
+         YulStmt.exprStmt (YulExpr.call "revert"
+            [YulExpr.lit 0, YulExpr.lit 100])],
+      YulStmt.exprStmt (YulExpr.call "sstore" [
+        YulExpr.lit writeSlot,
+        YulExpr.ident "newCount"]),
+      YulStmt.exprStmt (YulExpr.call "stop" [])]
+  have hbody : ∀ (n : Nat) (s : IRState), 9 ≤ n →
+      ¬ EvmYul.UInt256.ofNat
+          (s.storage (IRStorageSlot.ofNat writeSlot)).toNat <
+        EvmYul.UInt256.ofNat
+          ((EvmYul.UInt256.add
+            (EvmYul.UInt256.ofNat
+              (s.storage (IRStorageSlot.ofNat writeSlot)).toNat)
+            (EvmYul.UInt256.ofNat delta)).toNat) →
+      ∃ sRev, execIRStmts (n + 1) s body = .revert sRev := by
+    intro n s hn hOverflowState
+    obtain ⟨k, rfl⟩ : ∃ k, n = k + 9 := ⟨n - 9, by omega⟩
+    simp +decide [body, execIRStmts, execIRStmt, evalIRExpr, evalIRCall,
+      evalIRExprs, evalIRCall_sload_singleton,
+      Compiler.Proofs.abstractLoadStorageOrMapping,
+      Compiler.Proofs.YulGeneration.Backends.evalBuiltinCallWithEvmYulLeanContext,
+      Compiler.Proofs.YulGeneration.Backends.evalBuiltinCallViaEvmYulLean,
+      Compiler.Proofs.YulGeneration.Backends.evalPureBuiltinViaEvmYulLean,
+      IRState.getVar, IRState.setVar, hOverflowState]
+  let stateWithParams :=
+    List.foldl (fun st entry => st.setVar entry.1.name entry.2)
+      (applyIRTransactionContext tx initialState) (fn.params.zip tx.args)
+  have hOverflowState :
+      ¬ EvmYul.UInt256.ofNat
+          (stateWithParams.storage (IRStorageSlot.ofNat writeSlot)).toNat <
+        EvmYul.UInt256.ofNat
+          ((EvmYul.UInt256.add
+            (EvmYul.UInt256.ofNat
+              (stateWithParams.storage
+                (IRStorageSlot.ofNat writeSlot)).toNat)
+            (EvmYul.UInt256.ofNat delta)).toNat) := by
+    simpa [stateWithParams, applyIRTransactionContext,
+      IRState.foldl_setParamVars_storage] using hOverflow
+  have hsize : 9 ≤ sizeOf body := by
+    simp [body]
+    omega
+  have hBody' : fn.body = body := by
+    simpa [body] using hBody
+  unfold execIRFunction
+  simp only [hBody']
+  obtain ⟨sRev, hRev⟩ := hbody _ stateWithParams hsize hOverflowState
+  rw [hRev]
+  simp [applyIRTransactionContext]
+
+theorem execIRFunction_checked_sub_sload_lit_sstore_lit_stop_success
+    (fn : IRFunction) (tx : IRTransaction) (initialState : IRState)
+    (writeSlot delta errSelector errLen errText : Nat)
+    (hNoUnderflow :
+      ¬ EvmYul.UInt256.ofNat
+          (initialState.storage (IRStorageSlot.ofNat writeSlot)).toNat <
+        EvmYul.UInt256.ofNat delta)
+    (hBody : fn.body = [
+      YulStmt.let_ "count" (YulExpr.call "sload" [YulExpr.lit writeSlot]),
+      YulStmt.if_ (YulExpr.call "lt" [
+        YulExpr.ident "count",
+        YulExpr.lit delta])
+        [YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 0, YulExpr.hex errSelector]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 4, YulExpr.lit 32]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 36, YulExpr.lit errLen]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 68, YulExpr.hex errText]),
+         YulStmt.exprStmt (YulExpr.call "revert"
+            [YulExpr.lit 0, YulExpr.lit 100])],
+      YulStmt.exprStmt (YulExpr.call "sstore" [
+        YulExpr.lit writeSlot,
+        YulExpr.call "sub" [
+          YulExpr.ident "count",
+          YulExpr.lit delta]]),
+      YulStmt.exprStmt (YulExpr.call "stop" [])]) :
+    execIRFunction fn tx.args (applyIRTransactionContext tx initialState) =
+      { success := true
+        returnValue := none
+        finalStorage :=
+          Compiler.Proofs.abstractStoreStorageOrMapping initialState.storage
+            writeSlot
+            (EvmYul.UInt256.sub
+              (EvmYul.UInt256.ofNat
+                (initialState.storage (IRStorageSlot.ofNat writeSlot)).toNat)
+              (EvmYul.UInt256.ofNat delta)).toNat
+        finalMappings :=
+          Compiler.Proofs.storageAsMappings
+            (Compiler.Proofs.abstractStoreStorageOrMapping initialState.storage
+              writeSlot
+              (EvmYul.UInt256.sub
+                (EvmYul.UInt256.ofNat
+                  (initialState.storage
+                    (IRStorageSlot.ofNat writeSlot)).toNat)
+                (EvmYul.UInt256.ofNat delta)).toNat)
+        events := initialState.events } := by
+  let body : List YulStmt := [
+      YulStmt.let_ "count" (YulExpr.call "sload" [YulExpr.lit writeSlot]),
+      YulStmt.if_ (YulExpr.call "lt" [
+        YulExpr.ident "count",
+        YulExpr.lit delta])
+        [YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 0, YulExpr.hex errSelector]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 4, YulExpr.lit 32]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 36, YulExpr.lit errLen]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 68, YulExpr.hex errText]),
+         YulStmt.exprStmt (YulExpr.call "revert"
+            [YulExpr.lit 0, YulExpr.lit 100])],
+      YulStmt.exprStmt (YulExpr.call "sstore" [
+        YulExpr.lit writeSlot,
+        YulExpr.call "sub" [
+          YulExpr.ident "count",
+          YulExpr.lit delta]]),
+      YulStmt.exprStmt (YulExpr.call "stop" [])]
+  have hbody : ∀ (n : Nat) (s : IRState), 4 ≤ n →
+      ¬ EvmYul.UInt256.ofNat
+          (s.storage (IRStorageSlot.ofNat writeSlot)).toNat <
+        EvmYul.UInt256.ofNat delta →
+      execIRStmts (n + 1) s body =
+        .stop
+          { s.setVar "count"
+              (s.storage (IRStorageSlot.ofNat writeSlot)).toNat with
+            storage :=
+              Compiler.Proofs.abstractStoreStorageOrMapping s.storage
+                writeSlot
+                (EvmYul.UInt256.sub
+                  (EvmYul.UInt256.ofNat
+                    (s.storage (IRStorageSlot.ofNat writeSlot)).toNat)
+                  (EvmYul.UInt256.ofNat delta)).toNat } := by
+    intro n s hn hNoUnderflowState
+    obtain ⟨k, rfl⟩ : ∃ k, n = k + 4 := ⟨n - 4, by omega⟩
+    simp +decide [body, execIRStmts, execIRStmt, evalIRExpr, evalIRCall,
+      evalIRExprs, evalIRCall_sload_singleton,
+      Compiler.Proofs.abstractLoadStorageOrMapping,
+      Compiler.Proofs.YulGeneration.Backends.evalBuiltinCallWithEvmYulLeanContext,
+      Compiler.Proofs.YulGeneration.Backends.evalBuiltinCallViaEvmYulLean,
+      Compiler.Proofs.YulGeneration.Backends.evalPureBuiltinViaEvmYulLean,
+      IRState.getVar, IRState.setVar, hNoUnderflowState]
+  let stateWithParams :=
+    List.foldl (fun st entry => st.setVar entry.1.name entry.2)
+      (applyIRTransactionContext tx initialState) (fn.params.zip tx.args)
+  have hNoUnderflowState :
+      ¬ EvmYul.UInt256.ofNat
+          (stateWithParams.storage (IRStorageSlot.ofNat writeSlot)).toNat <
+        EvmYul.UInt256.ofNat delta := by
+    simpa [stateWithParams, applyIRTransactionContext,
+      IRState.foldl_setParamVars_storage] using hNoUnderflow
+  have hsize : 4 ≤ sizeOf body := by
+    simp [body]
+    omega
+  have hBody' : fn.body = body := by
+    simpa [body] using hBody
+  unfold execIRFunction
+  simp only [hBody']
+  rw [hbody _ stateWithParams hsize hNoUnderflowState]
+  simp only [IRState.setVar_events, IRState.foldl_setParamVars_storage,
+    IRState.foldl_setParamVars_events]
+  simp [stateWithParams, applyIRTransactionContext]
+
+theorem execIRFunction_checked_sub_sload_lit_sstore_lit_stop_revert
+    (fn : IRFunction) (tx : IRTransaction) (initialState : IRState)
+    (writeSlot delta errSelector errLen errText : Nat)
+    (hUnderflow :
+      EvmYul.UInt256.ofNat
+          (initialState.storage (IRStorageSlot.ofNat writeSlot)).toNat <
+        EvmYul.UInt256.ofNat delta)
+    (hBody : fn.body = [
+      YulStmt.let_ "count" (YulExpr.call "sload" [YulExpr.lit writeSlot]),
+      YulStmt.if_ (YulExpr.call "lt" [
+        YulExpr.ident "count",
+        YulExpr.lit delta])
+        [YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 0, YulExpr.hex errSelector]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 4, YulExpr.lit 32]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 36, YulExpr.lit errLen]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 68, YulExpr.hex errText]),
+         YulStmt.exprStmt (YulExpr.call "revert"
+            [YulExpr.lit 0, YulExpr.lit 100])],
+      YulStmt.exprStmt (YulExpr.call "sstore" [
+        YulExpr.lit writeSlot,
+        YulExpr.call "sub" [
+          YulExpr.ident "count",
+          YulExpr.lit delta]]),
+      YulStmt.exprStmt (YulExpr.call "stop" [])]) :
+    execIRFunction fn tx.args (applyIRTransactionContext tx initialState) =
+      { success := false
+        returnValue := none
+        finalStorage := initialState.storage
+        finalMappings := Compiler.Proofs.storageAsMappings initialState.storage
+        events := initialState.events } := by
+  let body : List YulStmt := [
+      YulStmt.let_ "count" (YulExpr.call "sload" [YulExpr.lit writeSlot]),
+      YulStmt.if_ (YulExpr.call "lt" [
+        YulExpr.ident "count",
+        YulExpr.lit delta])
+        [YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 0, YulExpr.hex errSelector]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 4, YulExpr.lit 32]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 36, YulExpr.lit errLen]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 68, YulExpr.hex errText]),
+         YulStmt.exprStmt (YulExpr.call "revert"
+            [YulExpr.lit 0, YulExpr.lit 100])],
+      YulStmt.exprStmt (YulExpr.call "sstore" [
+        YulExpr.lit writeSlot,
+        YulExpr.call "sub" [
+          YulExpr.ident "count",
+          YulExpr.lit delta]]),
+      YulStmt.exprStmt (YulExpr.call "stop" [])]
+  have hbody : ∀ (n : Nat) (s : IRState), 8 ≤ n →
+      EvmYul.UInt256.ofNat
+          (s.storage (IRStorageSlot.ofNat writeSlot)).toNat <
+        EvmYul.UInt256.ofNat delta →
+      ∃ sRev, execIRStmts (n + 1) s body = .revert sRev := by
+    intro n s hn hUnderflowState
+    obtain ⟨k, rfl⟩ : ∃ k, n = k + 8 := ⟨n - 8, by omega⟩
+    simp +decide [body, execIRStmts, execIRStmt, evalIRExpr, evalIRCall,
+      evalIRExprs, evalIRCall_sload_singleton,
+      Compiler.Proofs.abstractLoadStorageOrMapping,
+      Compiler.Proofs.YulGeneration.Backends.evalBuiltinCallWithEvmYulLeanContext,
+      Compiler.Proofs.YulGeneration.Backends.evalBuiltinCallViaEvmYulLean,
+      Compiler.Proofs.YulGeneration.Backends.evalPureBuiltinViaEvmYulLean,
+      IRState.getVar, IRState.setVar, hUnderflowState]
+  let stateWithParams :=
+    List.foldl (fun st entry => st.setVar entry.1.name entry.2)
+      (applyIRTransactionContext tx initialState) (fn.params.zip tx.args)
+  have hUnderflowState :
+      EvmYul.UInt256.ofNat
+          (stateWithParams.storage (IRStorageSlot.ofNat writeSlot)).toNat <
+        EvmYul.UInt256.ofNat delta := by
+    simpa [stateWithParams, applyIRTransactionContext,
+      IRState.foldl_setParamVars_storage] using hUnderflow
+  have hsize : 8 ≤ sizeOf body := by
+    simp [body]
+    omega
+  have hBody' : fn.body = body := by
+    simpa [body] using hBody
+  unfold execIRFunction
+  simp only [hBody']
+  obtain ⟨sRev, hRev⟩ := hbody _ stateWithParams hsize hUnderflowState
+  rw [hRev]
+  simp [applyIRTransactionContext]
+
 theorem execIRFunction_sstore0_add_sload0_lit_stop
     (fn : IRFunction) (tx : IRTransaction) (initialState : IRState)
     (delta : Nat)
