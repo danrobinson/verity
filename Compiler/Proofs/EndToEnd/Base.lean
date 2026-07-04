@@ -678,6 +678,21 @@ private theorem sizeOf_list_ge_length {α : Type _} [SizeOf α] (xs : List α) :
       simp
       omega
 
+private theorem sizeOf_list_ge_length_plus_mem {α : Type _} [SizeOf α]
+    {x : α} {xs : List α} (hMem : x ∈ xs) :
+    xs.length + sizeOf x ≤ sizeOf xs := by
+  induction xs with
+  | nil =>
+      simp at hMem
+  | cons head tail ih =>
+      simp at hMem ⊢
+      rcases hMem with hHead | hTail
+      · subst head
+        have hTailLen := sizeOf_list_ge_length tail
+        omega
+      · have hTailSize := ih hTail
+        omega
+
 /-- The concrete no-fallback/no-receive generated dispatcher has enough
 structural size to cover the selector prologue and one lazy-switch pass for
 every lowered switch case. This is the fuel arithmetic fact needed before the
@@ -742,6 +757,138 @@ private theorem sizeOf_buildSwitch_noFallback_noReceive_ge_source_cases_length
     simp [block, if2, sw]
     omega
   have hBlockLen : cases.length + 19 ≤ sizeOf block := by
+    omega
+  have hList : sizeOf block ≤ sizeOf [block] := by
+    simp
+    omega
+  exact Nat.le_trans hBlockLen hList
+
+private theorem sizeOf_switchCaseBody_ge_body_length
+    (fn : IRFunction) :
+    fn.body.length ≤
+      sizeOf
+        (Compiler.Proofs.YulGeneration.Backends.Native.switchCaseBody fn) := by
+  have hSwitchSize :=
+    sizeOf_list_ge_length
+      (Compiler.Proofs.YulGeneration.Backends.Native.switchCaseBody fn)
+  have hSwitchLength :
+      fn.body.length ≤
+        (Compiler.Proofs.YulGeneration.Backends.Native.switchCaseBody fn).length := by
+    by_cases hPayable : fn.payable
+    · simp [Compiler.Proofs.YulGeneration.Backends.Native.switchCaseBody,
+        Compiler.CodegenCommon.dispatchBody,
+        Compiler.CodegenCommon.calldatasizeGuard, hPayable]
+      omega
+    · have hNonPayable : fn.payable = false := Bool.eq_false_iff.2 hPayable
+      simp [Compiler.Proofs.YulGeneration.Backends.Native.switchCaseBody,
+        Compiler.CodegenCommon.dispatchBody,
+        Compiler.CodegenCommon.callvalueGuard,
+        Compiler.CodegenCommon.calldatasizeGuard, hNonPayable]
+      omega
+  omega
+
+private theorem sizeOf_switchCase_source_case_ge_body_length
+    (fn : IRFunction) :
+    fn.body.length ≤
+      sizeOf
+        (fn.selector,
+          Compiler.Proofs.YulGeneration.Backends.Native.switchCaseBody fn) := by
+  have hBodySize :=
+    sizeOf_switchCaseBody_ge_body_length fn
+  simp
+  omega
+
+/-- The concrete no-fallback/no-receive generated dispatcher has enough
+structural size to cover the generated prefix and the selected source body.
+
+This is stronger than the older case-count-only fuel lemma: it accounts for the
+selected case body payload that is present in the emitted source switch. -/
+private theorem sizeOf_buildSwitch_noFallback_noReceive_ge_source_cases_length_plus_selected_body_length_plus23
+    (fns : List IRFunction) (selector : Nat) (fn : IRFunction)
+    (hFind : fns.find? (fun fn => fn.selector == selector) = some fn) :
+    (Compiler.Proofs.YulGeneration.Backends.Native.buildSwitchSourceCases
+        fns).length + fn.body.length + 23 ≤
+      sizeOf [Compiler.CodegenCommon.buildSwitch fns none none] := by
+  unfold Compiler.CodegenCommon.buildSwitch
+  simp only [ite_false, Bool.false_eq_true,
+    Compiler.CodegenCommon.defaultDispatchCase]
+  have hcases :
+      (fns.map (fun fn =>
+        (fn.selector,
+          Compiler.CodegenCommon.dispatchBody fn.payable s!"{fn.name}()"
+            ([Compiler.CodegenCommon.calldatasizeGuard fn.params.length] ++
+              fn.body)))) =
+        Compiler.Proofs.YulGeneration.Backends.Native.buildSwitchSourceCases
+          fns := by
+    induction fns with
+    | nil =>
+        simp [Compiler.Proofs.YulGeneration.Backends.Native.buildSwitchSourceCases]
+    | cons fn rest ih =>
+        cases hpay : fn.payable <;>
+          simp [Compiler.Proofs.YulGeneration.Backends.Native.buildSwitchSourceCases,
+            Compiler.Proofs.YulGeneration.Backends.Native.switchCaseBody,
+            Compiler.CodegenCommon.dispatchBody,
+            Compiler.CodegenCommon.callvalueGuard,
+            Compiler.CodegenCommon.calldatasizeGuard, hpay]
+  rw [hcases]
+  let cases :=
+    Compiler.Proofs.YulGeneration.Backends.Native.buildSwitchSourceCases fns
+  have hSourceCase :
+      (fn.selector,
+        Compiler.Proofs.YulGeneration.Backends.Native.switchCaseBody fn) ∈
+        cases := by
+    have hCaseFind :
+        (Compiler.Proofs.YulGeneration.Backends.Native.switchCases fns).find?
+            (fun entry => entry.1 = selector) =
+          some
+            (selector,
+              Compiler.Proofs.YulGeneration.Backends.Native.switchCaseBody fn) := by
+      simpa using
+        (Compiler.Proofs.YulGeneration.Backends.Native.find_switch_case_of_find_function_eq_selector
+          fns selector fn hFind)
+    have hSelector : fn.selector = selector := by
+      have hFound := List.find?_some hFind
+      simpa using hFound
+    have hCaseFind' :
+        cases.find? (fun entry => entry.1 = selector) =
+          some
+            (fn.selector,
+              Compiler.Proofs.YulGeneration.Backends.Native.switchCaseBody fn) := by
+      simpa [cases,
+        Compiler.Proofs.YulGeneration.Backends.Native.buildSwitchSourceCases_eq_switchCases,
+        hSelector] using hCaseFind
+    exact List.mem_of_find?_eq_some hCaseFind'
+  have hCasesSize :=
+    sizeOf_list_ge_length_plus_mem hSourceCase
+  have hCaseBodySize :=
+    sizeOf_switchCase_source_case_ge_body_length fn
+  set defaultStmts : List Compiler.Yul.YulStmt :=
+    [Compiler.Yul.YulStmt.exprStmt
+      (Compiler.Yul.YulExpr.call "revert"
+        [Compiler.Yul.YulExpr.lit 0, Compiler.Yul.YulExpr.lit 0])]
+  set sw := Compiler.Yul.YulStmt.switch
+    (Compiler.Yul.YulExpr.call "shr"
+      [Compiler.Yul.YulExpr.lit Compiler.Constants.selectorShift,
+       Compiler.Yul.YulExpr.call "calldataload"
+        [Compiler.Yul.YulExpr.lit 0]])
+    cases (some defaultStmts)
+  set if2 := Compiler.Yul.YulStmt.if_
+    (Compiler.Yul.YulExpr.ident "__has_selector") [sw]
+  let block := Compiler.Yul.YulStmt.block
+    [Compiler.Yul.YulStmt.let_ "__has_selector"
+      (Compiler.Yul.YulExpr.call "iszero"
+        [Compiler.Yul.YulExpr.call "lt"
+          [Compiler.Yul.YulExpr.call "calldatasize" [],
+           Compiler.Yul.YulExpr.lit 4]]),
+     Compiler.Yul.YulStmt.if_
+      (Compiler.Yul.YulExpr.call "iszero"
+        [Compiler.Yul.YulExpr.ident "__has_selector"]) defaultStmts,
+     if2]
+  have hBlock : sizeOf block ≥ 23 + sizeOf cases := by
+    simp [block, if2, sw]
+    omega
+  have hBlockLen :
+      cases.length + fn.body.length + 23 ≤ sizeOf block := by
     omega
   have hList : sizeOf block ≤ sizeOf [block] := by
     simp
@@ -1005,6 +1152,59 @@ private theorem sizeOf_emitYul_runtimeCode_noMapping_ge_lowered_cases_length_plu
   simp [Compiler.CodegenCommon.initFreeMemoryPointer] at hSize ⊢
   omega
 
+private theorem sizeOf_emitYul_runtimeCode_noMapping_ge_lowered_cases_length_plus_selected_body_length_plus23
+    {spec : CompilationModel.CompilationModel} {selectors : List Nat}
+    {irContract : IRContract}
+    {reservedNames : List String} {n0 : Nat}
+    {cases' : List (Nat × List EvmYul.Yul.Ast.Stmt)} {midN : Nat}
+    {selector : Nat}
+    {fn : IRFunction}
+    (hCompile : CompilationModel.compile spec selectors = .ok irContract)
+    (hSupported : SupportedSpec spec selectors)
+    (hNoMapping : irContract.usesMapping = false)
+    (hFind :
+      irContract.functions.find? (fun fn => fn.selector == selector) =
+        some fn)
+    (hLowerCases :
+      Compiler.Proofs.YulGeneration.Backends.lowerSwitchCasesNativeWithSwitchIds
+        reservedNames
+        (Compiler.Proofs.YulGeneration.Backends.freshNativeSwitchId
+          reservedNames n0 + 1)
+        (Compiler.Proofs.YulGeneration.Backends.Native.buildSwitchSourceCases
+          irContract.functions) = .ok (cases', midN)) :
+    cases'.length + fn.body.length + 23 ≤
+      sizeOf (Compiler.emitYul irContract).runtimeCode := by
+  have hRuntime :
+      (Compiler.emitYul irContract).runtimeCode =
+        [Compiler.CodegenCommon.initFreeMemoryPointer,
+          Compiler.CodegenCommon.buildSwitch irContract.functions none none] :=
+    Compiler.Proofs.YulGeneration.Backends.Native.emitYul_runtimeCode_eq_single_dispatcher_of_noMapping_noInternals_noFallback_noReceive
+      irContract hNoMapping
+      (Compiler.Proofs.IRGeneration.ContractShape.compile_ok_yields_internalFunctions_nil
+        (model := spec) (selectors := selectors) (hSupported := hSupported)
+        (ir := irContract) (hcompile := hCompile))
+      (Compiler.Proofs.IRGeneration.ContractShape.compile_ok_yields_noFallbackEntrypoint
+        spec selectors hSupported irContract hCompile)
+      (Compiler.Proofs.IRGeneration.ContractShape.compile_ok_yields_noReceiveEntrypoint
+        spec selectors hSupported irContract hCompile)
+  have hLen :
+      cases'.length =
+        (Compiler.Proofs.YulGeneration.Backends.Native.buildSwitchSourceCases
+          irContract.functions).length :=
+    Compiler.Proofs.YulGeneration.Backends.lowerSwitchCasesNativeWithSwitchIds_length_eq
+      reservedNames
+      (Compiler.Proofs.YulGeneration.Backends.freshNativeSwitchId
+        reservedNames n0 + 1)
+      midN
+      (Compiler.Proofs.YulGeneration.Backends.Native.buildSwitchSourceCases
+        irContract.functions) cases' hLowerCases
+  have hSize :=
+    sizeOf_buildSwitch_noFallback_noReceive_ge_source_cases_length_plus_selected_body_length_plus23
+      irContract.functions selector fn hFind
+  rw [hRuntime, hLen]
+  simp [Compiler.CodegenCommon.initFreeMemoryPointer] at hSize ⊢
+  omega
+
 private theorem sizeOf_emitYul_runtimeCode_mapping_ge_lowered_cases_length
     {spec : CompilationModel.CompilationModel} {selectors : List Nat}
     {irContract : IRContract}
@@ -1211,6 +1411,65 @@ private theorem sizeOf_emitYul_runtimeCode_mapping_ge_lowered_cases_length_plus3
   have hSize :=
     sizeOf_buildSwitch_noFallback_noReceive_ge_source_cases_length_plus24
       irContract.functions
+  rw [hLen]
+  unfold Compiler.emitYul Compiler.CodegenCommon.emitYul
+    Compiler.CodegenCommon.runtimeCode
+  simp only [hMapping, hInternals, hNoFallback, hNoReceive, if_true,
+    List.singleton_append, List.append_nil]
+  simp only [Compiler.CodegenCommon.mappingSlotFuncAt]
+  simp [Compiler.CodegenCommon.initFreeMemoryPointer] at hSize ⊢
+  have hExtra : 1 ≤ sizeOf "mappingSlot" := by decide
+  omega
+
+private theorem sizeOf_emitYul_runtimeCode_mapping_ge_lowered_cases_length_plus_selected_body_length_plus23
+    {spec : CompilationModel.CompilationModel} {selectors : List Nat}
+    {irContract : IRContract}
+    {reservedNames : List String} {switchStart : Nat}
+    {cases' : List (Nat × List EvmYul.Yul.Ast.Stmt)} {midN : Nat}
+    {selector : Nat}
+    {fn : IRFunction}
+    (hCompile : CompilationModel.compile spec selectors = .ok irContract)
+    (hSupported : SupportedSpec spec selectors)
+    (hMapping : irContract.usesMapping = true)
+    (hFind :
+      irContract.functions.find? (fun fn => fn.selector == selector) =
+        some fn)
+    (hLowerCases :
+      Compiler.Proofs.YulGeneration.Backends.lowerSwitchCasesNativeWithSwitchIds
+        reservedNames
+        (Compiler.Proofs.YulGeneration.Backends.freshNativeSwitchId
+          reservedNames switchStart + 1)
+        (Compiler.Proofs.YulGeneration.Backends.Native.buildSwitchSourceCases
+          irContract.functions) = .ok (cases', midN)) :
+    cases'.length + fn.body.length + 23 ≤
+      sizeOf (Compiler.emitYul irContract).runtimeCode := by
+  have hInternals :
+      irContract.internalFunctions = [] :=
+    Compiler.Proofs.IRGeneration.ContractShape.compile_ok_yields_internalFunctions_nil
+      (model := spec) (selectors := selectors) (hSupported := hSupported)
+      (ir := irContract) (hcompile := hCompile)
+  have hNoFallback :
+      irContract.fallbackEntrypoint = none :=
+    Compiler.Proofs.IRGeneration.ContractShape.compile_ok_yields_noFallbackEntrypoint
+      spec selectors hSupported irContract hCompile
+  have hNoReceive :
+      irContract.receiveEntrypoint = none :=
+    Compiler.Proofs.IRGeneration.ContractShape.compile_ok_yields_noReceiveEntrypoint
+      spec selectors hSupported irContract hCompile
+  have hLen :
+      cases'.length =
+        (Compiler.Proofs.YulGeneration.Backends.Native.buildSwitchSourceCases
+          irContract.functions).length :=
+    Compiler.Proofs.YulGeneration.Backends.lowerSwitchCasesNativeWithSwitchIds_length_eq
+      reservedNames
+      (Compiler.Proofs.YulGeneration.Backends.freshNativeSwitchId
+        reservedNames switchStart + 1)
+      midN
+      (Compiler.Proofs.YulGeneration.Backends.Native.buildSwitchSourceCases
+        irContract.functions) cases' hLowerCases
+  have hSize :=
+    sizeOf_buildSwitch_noFallback_noReceive_ge_source_cases_length_plus_selected_body_length_plus23
+      irContract.functions selector fn hFind
   rw [hLen]
   unfold Compiler.emitYul Compiler.CodegenCommon.emitYul
     Compiler.CodegenCommon.runtimeCode
@@ -24436,6 +24695,11 @@ def checked? (body : List Yul.YulStmt) : Bool :=
         generatedPrefixFreshBindingsChecked? bindings
   | none => false
 
+def checkedUnbounded? (body : List Yul.YulStmt) : Bool :=
+  match ofBody? body with
+  | some bindings => generatedPrefixFreshBindingsChecked? bindings
+  | none => false
+
 theorem checked?_eq_true
     {body : List Yul.YulStmt}
     (hCheck : checked? body = true) :
@@ -24452,6 +24716,21 @@ theorem checked?_eq_true
       exact
         ⟨bindings, ofBody?_eq_some_toBody hParse,
           generatedPrefixFreshBindings_of_checked? hFresh, by simpa using hLen⟩
+
+theorem checkedUnbounded?_eq_true
+    {body : List Yul.YulStmt}
+    (hCheck : checkedUnbounded? body = true) :
+    ∃ bindings : List (String × Nat),
+      body = toBody bindings ∧ GeneratedPrefixFreshBindings bindings := by
+  unfold checkedUnbounded? at hCheck
+  cases hParse : ofBody? body with
+  | none =>
+      simp [hParse] at hCheck
+  | some bindings =>
+      simp [hParse] at hCheck
+      exact
+        ⟨bindings, ofBody?_eq_some_toBody hParse,
+          generatedPrefixFreshBindings_of_checked? hCheck⟩
 
 private theorem targetsFreshFrom_of_lookup_none_and_nodup
     (state : EvmYul.Yul.State)
@@ -24959,6 +25238,81 @@ private theorem nativeResultsMatchOn_execIRFunction_body_markedPrefix
           switchId store)
 
 end NativeGeneratedSelectedUserBodyLiteralLetBindings
+
+/-- Actual generated-case fuel bound for structural literal-let selected bodies.
+
+The older selected-body result bridge quantifies over arbitrary `cases'`, so it
+cannot derive this fact for unbounded bodies. This theorem records the true
+compile-generated-cases boundary: once `cases'` is the actual lowering of
+`buildSwitchSourceCases`, the emitted runtime size includes the selected source
+body payload, giving enough exact fuel for every literal binding in `fn.body`. -/
+theorem nativeGeneratedSelectorHitUserBodyFuel_bound_of_literal_let_bindings_lowered_cases
+    {spec : CompilationModel.CompilationModel} {selectors : List Nat}
+    {irContract : IRContract}
+    {tx : IRTransaction}
+    {reservedNames : List String} {n0 : Nat}
+    {cases' : List (Nat × List EvmYul.Yul.Ast.Stmt)} {midN : Nat}
+    {fn : IRFunction} {bindings : List (String × Nat)}
+    (hCompile : CompilationModel.compile spec selectors = .ok irContract)
+    (hSupported : SupportedSpec spec selectors)
+    (hFind :
+      irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+        some fn)
+    (hBody :
+      fn.body =
+        NativeGeneratedSelectedUserBodyLiteralLetBindings.toBody bindings)
+    (hLowerCases :
+      Compiler.Proofs.YulGeneration.Backends.lowerSwitchCasesNativeWithSwitchIds
+        reservedNames
+        (Compiler.Proofs.YulGeneration.Backends.freshNativeSwitchId
+          reservedNames n0 + 1)
+        (Compiler.Proofs.YulGeneration.Backends.Native.buildSwitchSourceCases
+          irContract.functions) = .ok (cases', midN))
+    (suffix : List (Nat × List EvmYul.Yul.Ast.Stmt)) :
+    bindings.length + 2 ≤
+      nativeGeneratedSelectorHitUserBodyFuel irContract fn cases' +
+        suffix.length + 9 := by
+  have hFuelBound30 :
+      cases'.length + 30 ≤ sizeOf (Compiler.emitYul irContract).runtimeCode := by
+    dsimp [nativeRuntimeDispatcherFuel]
+    by_cases hUsesMapping : irContract.usesMapping
+    · have hMapping : irContract.usesMapping = true := by
+        simpa using hUsesMapping
+      exact
+        sizeOf_emitYul_runtimeCode_mapping_ge_lowered_cases_length_plus30
+          hCompile hSupported hMapping hLowerCases
+    · have hNoMapping : irContract.usesMapping = false :=
+        Bool.eq_false_iff.2 hUsesMapping
+      exact
+        sizeOf_emitYul_runtimeCode_noMapping_ge_lowered_cases_length_plus30
+          hCompile hSupported hNoMapping hLowerCases
+  have hBodyFuel :
+      cases'.length + bindings.length + 23 ≤
+        sizeOf (Compiler.emitYul irContract).runtimeCode := by
+    have hBodySize :
+        cases'.length + fn.body.length + 23 ≤
+          sizeOf (Compiler.emitYul irContract).runtimeCode := by
+      dsimp [nativeRuntimeDispatcherFuel]
+      by_cases hUsesMapping : irContract.usesMapping
+      · have hMapping : irContract.usesMapping = true := by
+          simpa using hUsesMapping
+        exact
+          sizeOf_emitYul_runtimeCode_mapping_ge_lowered_cases_length_plus_selected_body_length_plus23
+            hCompile hSupported hMapping hFind hLowerCases
+      · have hNoMapping : irContract.usesMapping = false :=
+          Bool.eq_false_iff.2 hUsesMapping
+        exact
+          sizeOf_emitYul_runtimeCode_noMapping_ge_lowered_cases_length_plus_selected_body_length_plus23
+            hCompile hSupported hNoMapping hFind hLowerCases
+    simpa [hBody] using hBodySize
+  by_cases hPayable : fn.payable
+  · simp [nativeGeneratedSelectorHitUserBodyFuel, hPayable,
+      nativeRuntimeDispatcherFuel]
+    omega
+  · have hNonPayable : fn.payable = false := Bool.eq_false_iff.2 hPayable
+    simp [nativeGeneratedSelectorHitUserBodyFuel, hNonPayable,
+      nativeRuntimeDispatcherFuel]
+    omega
 
 /-- Bridge-level execution constructor for arbitrary literal-`let` binding
 lists, factored so the remaining selected-body generalization can focus on
