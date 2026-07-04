@@ -2693,6 +2693,37 @@ private theorem yulStmtListCallsDisjoint_of_compiledCallsDisjoint
         (hhead hstmtSurface headIR hheadCompile)
         (ih (bodyIR := tailIR) hrestSurface htailCompile')
 
+private theorem stmtListCompileCore_singleton_requireLiteralGuardFamilyClause
+    {scope : List String}
+    (clause : Verity.Core.Free.RequireLiteralGuardFamilyClause) :
+    FunctionBody.StmtListCompileCore scope [clause.toStmt] := by
+  cases clause with
+  | mk family n m p q message =>
+      cases family with
+      | binary op =>
+          cases op <;>
+            simp [Verity.Core.Free.RequireLiteralGuardFamilyClause.toStmt] <;>
+            refine FunctionBody.StmtListCompileCore.require_ ?_ ?_
+              FunctionBody.StmtListCompileCore.nil <;>
+            (first
+            | intro name hmem
+              simp [FunctionBody.exprBoundNames] at hmem
+            | repeat constructor)
+      | andEqLt =>
+          simp [Verity.Core.Free.RequireLiteralGuardFamilyClause.toStmt]
+          refine FunctionBody.StmtListCompileCore.require_ ?_ ?_
+            FunctionBody.StmtListCompileCore.nil
+          · repeat constructor
+          · intro name hmem
+            simp [FunctionBody.exprBoundNames] at hmem
+      | orEqLt =>
+          simp [Verity.Core.Free.RequireLiteralGuardFamilyClause.toStmt]
+          refine FunctionBody.StmtListCompileCore.require_ ?_ ?_
+            FunctionBody.StmtListCompileCore.nil
+          · repeat constructor
+          · intro name hmem
+            simp [FunctionBody.exprBoundNames] at hmem
+
 theorem stmtListHelperFreeCompiledCallsDisjoint_of_stmtListTerminalCore_internalFunctions_nil
     (runtimeContract : IRContract)
     (hinternal : runtimeContract.internalFunctions = [])
@@ -2870,6 +2901,293 @@ theorem stmtListHelperFreeCompiledCallsDisjoint_of_stmtListTerminalCore_internal
                 (FunctionBody.scopeNamesIncluded_collectStmtNames_tail
                   (stmt := Stmt.ite cond thenBranch elseBranch)
                   FunctionBody.scopeNamesIncluded_refl))))
+
+theorem stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+    (runtimeContract : IRContract)
+    (hinternal : runtimeContract.internalFunctions = [])
+    {fields : List Field}
+    (hnoConflict : firstFieldWriteSlotConflict fields = none) :
+    ∀ {scope largerScope : List String} {stmts : List Stmt},
+      SupportedStmtList fields scope stmts →
+      stmtListTouchesUnsupportedContractSurface stmts = false →
+      FunctionBody.scopeNamesIncluded scope largerScope →
+        StmtListHelperFreeCompiledCallsDisjoint runtimeContract fields largerScope stmts
+  | _, _, _, .compileCore hcore, _hsurface, hincluded =>
+      stmtListHelperFreeCompiledCallsDisjoint_of_stmtListCompileCore_internalFunctions_nil
+        runtimeContract hinternal (fields := fields)
+        (stmtListCompileCore_of_scopeNamesIncluded hcore hincluded)
+  | _, _, _, .terminalCore hterminal, _hsurface, hincluded =>
+      stmtListHelperFreeCompiledCallsDisjoint_of_stmtListTerminalCore_internalFunctions_nil
+        runtimeContract hinternal (fields := fields)
+        (stmtListTerminalCore_of_scopeNamesIncluded hterminal hincluded)
+  | _, _, _, .setStorageSingleSlot hcore hinScope hfind, _hsurface, hincluded => by
+      rename_i scope largerScope fieldName value slot
+      exact .cons
+        (fun _hhelper compiledIR hcompile => by
+          rcases FunctionBody.compileExpr_core_ok (fields := fields) hcore with
+            ⟨valueIR, hvalueIR⟩
+          have hvalueIRInternal :
+              CompilationModel.compileExprWithInternals fields .calldata [] value =
+                Except.ok valueIR := by
+            simpa [CompilationModel.compileExprWithInternals_nil_eq] using hvalueIR
+          have hNotMapping := isMapping_false_of_findFieldWithResolvedSlot_uint256 hfind rfl
+          simp [CompilationModel.compileStmt, CompilationModel.compileStmtWithFork,
+            CompilationModel.compileSetStorage, hNotMapping, hfind, hvalueIRInternal,
+            bind, Except.bind, pure, Except.pure] at hcompile
+          cases hcompile
+          exact YulStmtListCallsDisjointFromInternalTable_of_internalFunctions_nil
+            runtimeContract hinternal _
+            (.exprStmt _ [] .nil))
+        .nil
+  | _, _, _, .setStorageAddrSingleSlot hcore hinScope hfind, _hsurface, hincluded => by
+      rename_i scope largerScope fieldName value slot
+      exact .cons
+        (fun _hhelper compiledIR hcompile => by
+          rcases FunctionBody.compileExpr_core_ok (fields := fields) hcore with
+            ⟨valueIR, hvalueIR⟩
+          have hvalueIRInternal :
+              CompilationModel.compileExprWithInternals fields .calldata [] value =
+                Except.ok valueIR := by
+            simpa [CompilationModel.compileExprWithInternals_nil_eq] using hvalueIR
+          have hNotMapping := isMapping_false_of_findFieldWithResolvedSlot_address hfind rfl
+          simp [CompilationModel.compileStmt, CompilationModel.compileStmtWithFork,
+            CompilationModel.compileSetStorage, hNotMapping, hfind, hvalueIRInternal,
+            bind, Except.bind, pure, Except.pure] at hcompile
+          cases hcompile
+          exact YulStmtListCallsDisjointFromInternalTable_of_internalFunctions_nil
+            runtimeContract hinternal _
+            (.exprStmt _ [] .nil))
+        .nil
+  | _, _, _, .setImmutableSingle _ _, hsurface, _hincluded => by
+      simp [stmtListTouchesUnsupportedContractSurface,
+        stmtTouchesUnsupportedContractSurface] at hsurface
+  | _, _, _, .mstoreSingle hcoreOffset hinScopeOffset hcoreValue hinScopeValue,
+      _hsurface, hincluded =>
+      stmtListHelperFreeCompiledCallsDisjoint_of_stmtListCompileCore_internalFunctions_nil
+        runtimeContract hinternal (fields := fields)
+        (FunctionBody.StmtListCompileCore.mstore hcoreOffset
+          (exprBoundNamesInScope_of_scopeNamesIncluded hinScopeOffset hincluded)
+          hcoreValue
+          (exprBoundNamesInScope_of_scopeNamesIncluded hinScopeValue hincluded)
+          FunctionBody.StmtListCompileCore.nil)
+  | _, _, _, .tstoreSingle hcoreOffset hinScopeOffset hcoreValue hinScopeValue,
+      _hsurface, hincluded =>
+      stmtListHelperFreeCompiledCallsDisjoint_of_stmtListCompileCore_internalFunctions_nil
+        runtimeContract hinternal (fields := fields)
+        (FunctionBody.StmtListCompileCore.tstore hcoreOffset
+          (exprBoundNamesInScope_of_scopeNamesIncluded hinScopeOffset hincluded)
+          hcoreValue
+          (exprBoundNamesInScope_of_scopeNamesIncluded hinScopeValue hincluded)
+          FunctionBody.StmtListCompileCore.nil)
+  | _, _, _, .letStorageField hfind hfieldInScope, _hsurface, hincluded => by
+      rename_i scope largerScope tmp fieldName slot
+      exact .cons
+        (fun _hhelper compiledIR hcompile => by
+          have hNotMapping := isMapping_false_of_findFieldWithResolvedSlot_uint256 hfind rfl
+          simp only [CompilationModel.compileStmt, CompilationModel.compileStmtWithFork,
+            CompilationModel.compileExprWithInternals, hNotMapping, hfind] at hcompile
+          cases hcompile
+          exact YulStmtListCallsDisjointFromInternalTable_of_internalFunctions_nil
+            runtimeContract hinternal _
+            (.let_ _ _ [] .nil))
+        .nil
+  | _, _, _, .letStorageAddrField hfind hfieldInScope, _hsurface, hincluded => by
+      rename_i scope largerScope tmp fieldName slot
+      exact .cons
+        (fun _hhelper compiledIR hcompile => by
+          have hNotMapping := isMapping_false_of_findFieldWithResolvedSlot_address hfind rfl
+          simp only [CompilationModel.compileStmt, CompilationModel.compileStmtWithFork,
+            CompilationModel.compileExprWithInternals, hNotMapping, hfind] at hcompile
+          cases hcompile
+          exact YulStmtListCallsDisjointFromInternalTable_of_internalFunctions_nil
+            runtimeContract hinternal _
+            (.let_ _ _ [] .nil))
+        .nil
+  | _, _, _, .assignStorageField hfind hfieldInScope, _hsurface, hincluded => by
+      rename_i scope largerScope name fieldName slot
+      exact .cons
+        (fun _hhelper compiledIR hcompile => by
+          have hNotMapping := isMapping_false_of_findFieldWithResolvedSlot_uint256 hfind rfl
+          simp only [CompilationModel.compileStmt, CompilationModel.compileStmtWithFork,
+            CompilationModel.compileExprWithInternals, hNotMapping, hfind] at hcompile
+          cases hcompile
+          exact YulStmtListCallsDisjointFromInternalTable_of_internalFunctions_nil
+            runtimeContract hinternal _
+            (.assign _ _ [] .nil))
+        .nil
+  | _, _, _, .assignStorageAddrField hfind hfieldInScope, _hsurface, hincluded => by
+      rename_i scope largerScope name fieldName slot
+      exact .cons
+        (fun _hhelper compiledIR hcompile => by
+          have hNotMapping := isMapping_false_of_findFieldWithResolvedSlot_address hfind rfl
+          simp only [CompilationModel.compileStmt, CompilationModel.compileStmtWithFork,
+            CompilationModel.compileExprWithInternals, hNotMapping, hfind] at hcompile
+          cases hcompile
+          exact YulStmtListCallsDisjointFromInternalTable_of_internalFunctions_nil
+            runtimeContract hinternal _
+            (.assign _ _ [] .nil))
+        .nil
+  | _, _, _, .emitEvent _ _, hsurface, _hincluded =>
+      False.elim (false_of_supportedStmtList_emitEvent_surface hsurface)
+  | _, _, _, .pureHashingEcm _ _ _, hsurface, _hincluded => by
+      simp [stmtListTouchesUnsupportedContractSurface,
+        stmtTouchesUnsupportedContractSurface] at hsurface
+  | _, _, _, .letMappingField _ _ _, hsurface, _hincluded =>
+      False.elim (false_of_supportedStmtList_letMappingField_surface hsurface)
+  | _, _, _, .letMappingWordField _ _ _, hsurface, _hincluded =>
+      False.elim (false_of_supportedStmtList_letMappingWordField_surface hsurface)
+  | _, _, _, .letMappingUintField _ _ _, hsurface, _hincluded =>
+      False.elim (false_of_supportedStmtList_letMappingUintField_surface hsurface)
+  | _, _, _, .letMappingPackedWordField _ _ _, hsurface, _hincluded =>
+      False.elim (false_of_supportedStmtList_letMappingPackedWordField_surface hsurface)
+  | _, _, _, .letMapping2Field _ _ _ _ _, hsurface, _hincluded =>
+      False.elim (false_of_supportedStmtList_letMapping2Field_surface hsurface)
+  | _, _, _, .letMapping2WordField _ _ _ _ _, hsurface, _hincluded =>
+      False.elim (false_of_supportedStmtList_letMapping2WordField_surface hsurface)
+  | _, _, _, .letStructMemberField _ _ _, hsurface, _hincluded =>
+      False.elim (false_of_supportedStmtList_letStructMemberField_surface hsurface)
+  | _, _, _, .letStructMember2Field _ _ _ _ _, hsurface, _hincluded =>
+      False.elim (false_of_supportedStmtList_letStructMember2Field_surface hsurface)
+  | _, _, _, .setMappingUintSingle _ _ _ _ _, hsurface, _hincluded =>
+      False.elim (false_of_supportedStmtList_setMappingUintSingle_surface hsurface)
+  | _, _, _, .setMappingChainSingle _ _ _ _ _, hsurface, _hincluded =>
+      False.elim (false_of_supportedStmtList_setMappingChainSingle_surface hsurface)
+  | _, _, _, .setMappingSingle _ _ _ _ _, hsurface, _hincluded =>
+      False.elim (false_of_supportedStmtList_setMappingSingle_surface hsurface)
+  | _, _, _, .setMappingWordSingle _ _ _ _ _, hsurface, _hincluded =>
+      False.elim (false_of_supportedStmtList_setMappingWordSingle_surface hsurface)
+  | _, _, _, .setMappingPackedWordSingle _ _ _ _ _ _ _ _ _ _, hsurface, _hincluded =>
+      False.elim (false_of_supportedStmtList_setMappingPackedWordSingle_surface hsurface)
+  | _, _, _, .setStructMemberSingle _ _ _ _ _ _ _, hsurface, _hincluded =>
+      False.elim (false_of_supportedStmtList_setStructMemberSingle_surface hsurface)
+  | _, _, _, .setMapping2Single _ _ _ _ _ _ _, hsurface, _hincluded =>
+      False.elim (false_of_supportedStmtList_setMapping2Single_surface hsurface)
+  | _, _, _, .setMapping2WordSingle _ _ _ _ _ _ _, hsurface, _hincluded =>
+      False.elim (false_of_supportedStmtList_setMapping2WordSingle_surface hsurface)
+  | _, _, _, .setStructMember2Single _ _ _ _ _ _ _ _ _, hsurface, _hincluded =>
+      False.elim (false_of_supportedStmtList_setStructMember2Single_surface hsurface)
+  | scope, largerScope, _, .forEachLiteralBounded hbodyNames hbody, hsurface, hincluded => by
+      rename_i varName body
+      have hbodySurface :
+          stmtListTouchesUnsupportedContractSurface body = false :=
+        stmtListTouchesUnsupportedContractSurface_body_of_singleton_forEach_zero hsurface
+      have hbodyDisjoint :
+          StmtListHelperFreeCompiledCallsDisjoint runtimeContract fields
+            (CompilationModel.forEachBodyScope largerScope varName (.literal 0) body) body :=
+        stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+          runtimeContract hinternal hnoConflict hbody hbodySurface (by
+          intro name hmem
+          have hmem' : name = varName ∨ name ∈ scope := by
+            simpa using hmem
+          rcases hmem' with hname | hscope
+          · subst name
+            simp [CompilationModel.forEachBodyScope]
+          · simp [CompilationModel.forEachBodyScope, hincluded name hscope])
+      exact .cons
+        (fun _hhelper compiledIR hcompile => by
+          rcases hbodyCompile :
+              CompilationModel.compileStmtList
+                fields [] [] .calldata [] false
+                  (CompilationModel.forEachBodyScope largerScope varName (.literal 0) body)
+                  [] body with _ | bodyIR
+          · simp [CompilationModel.compileStmt, CompilationModel.compileStmtWithFork,
+              FunctionBody.compileStmtListWithFork_cancun_eq_compileStmtList,
+              CompilationModel.compileExprWithInternals, hbodyCompile, bind, Except.bind,
+              pure, Except.pure] at hcompile
+          · have hbodyIRDisjoint :
+                YulStmtListCallsDisjointFromInternalTable runtimeContract bodyIR :=
+              yulStmtListCallsDisjoint_of_compiledCallsDisjoint
+                hbodyDisjoint
+                (stmtListTouchesUnsupportedHelperSurface_eq_false_of_contractSurfaceClosed
+                  hbodySurface)
+                hbodyCompile
+            simp [CompilationModel.compileStmt, CompilationModel.compileStmtWithFork,
+              FunctionBody.compileStmtListWithFork_cancun_eq_compileStmtList,
+              CompilationModel.compileExprWithInternals, hbodyCompile, bind, Except.bind,
+              pure, Except.pure] at hcompile
+            cases hcompile
+            exact .for_ _ _ _ _ []
+              (.let_ _ _ _
+                (yulExprCallsDisjointFromInternalTable_of_internalFunctions_nil
+                  runtimeContract hinternal _)
+                (.let_ _ _ _
+                  (yulExprCallsDisjointFromInternalTable_of_internalFunctions_nil
+                    runtimeContract hinternal _)
+                  (.let_ _ _ _
+                    (yulExprCallsDisjointFromInternalTable_of_internalFunctions_nil
+                      runtimeContract hinternal _)
+                    .nil)))
+              (yulExprCallsDisjointFromInternalTable_of_internalFunctions_nil
+                runtimeContract hinternal _)
+              (.assign _ _ _
+                (yulExprCallsDisjointFromInternalTable_of_internalFunctions_nil
+                  runtimeContract hinternal _)
+                .nil)
+              (.assign _ _ _
+                (yulExprCallsDisjointFromInternalTable_of_internalFunctions_nil
+                  runtimeContract hinternal _)
+                hbodyIRDisjoint)
+              .nil)
+        .nil
+  | _, _, _, .forEachLiteralEmpty n, _hsurface, _hincluded => by
+      rename_i scope largerScope varName
+      exact .cons
+        (fun _hhelper compiledIR hcompile => by
+          simp [CompilationModel.compileStmt, CompilationModel.compileStmtWithFork,
+            FunctionBody.compileStmtListWithFork_nil_eq_ok,
+            CompilationModel.compileExprWithInternals, CompilationModel.uint256Modulus,
+            bind, Except.bind, pure, Except.pure] at hcompile
+          cases hcompile
+          exact .for_ _ _ _ _ []
+            (.let_ _ _ _
+              (yulExprCallsDisjointFromInternalTable_of_internalFunctions_nil
+                runtimeContract hinternal _)
+              (.let_ _ _ _
+                (yulExprCallsDisjointFromInternalTable_of_internalFunctions_nil
+                  runtimeContract hinternal _)
+                (.let_ _ _ _
+                  (yulExprCallsDisjointFromInternalTable_of_internalFunctions_nil
+                    runtimeContract hinternal _)
+                  .nil)))
+            (yulExprCallsDisjointFromInternalTable_of_internalFunctions_nil
+              runtimeContract hinternal _)
+            (.assign _ _ _
+              (yulExprCallsDisjointFromInternalTable_of_internalFunctions_nil
+                runtimeContract hinternal _)
+              .nil)
+            (.assign _ _ _
+              (yulExprCallsDisjointFromInternalTable_of_internalFunctions_nil
+                runtimeContract hinternal _)
+              .nil)
+            .nil)
+        .nil
+  | _, largerScope, _, .requireClause clause hrest, hsurface, hincluded => by
+      simp [stmtListTouchesUnsupportedContractSurface] at hsurface
+      exact stmtListHelperFreeCompiledCallsDisjoint_append
+        (stmtListHelperFreeCompiledCallsDisjoint_of_stmtListCompileCore_internalFunctions_nil
+          runtimeContract hinternal (fields := fields)
+          (stmtListCompileCore_singleton_requireLiteralGuardFamilyClause
+            (scope := largerScope) clause))
+        (by
+          simpa [List.foldl, stmtNextScope_requireLiteralGuardFamilyClause clause] using
+            (stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+              runtimeContract hinternal hnoConflict hrest hsurface.2 hincluded))
+  | _, _, _, .iteTerminal hcond hinScope hthen helse, _hsurface, hincluded =>
+      stmtListHelperFreeCompiledCallsDisjoint_of_stmtListTerminalCore_internalFunctions_nil
+        runtimeContract hinternal (fields := fields)
+        (FunctionBody.StmtListTerminalCore.ite hcond
+          (exprBoundNamesInScope_of_scopeNamesIncluded hinScope hincluded)
+          (stmtListTerminalCore_of_scopeNamesIncluded hthen hincluded)
+          (stmtListTerminalCore_of_scopeNamesIncluded helse hincluded)
+          FunctionBody.StmtListCompileCore.nil)
+  | _, _, _, .append hpfx hsfx, hsurface, hincluded => by
+      simp only [stmtListTouchesUnsupportedContractSurface_append, Bool.or_eq_false_iff] at hsurface
+      exact stmtListHelperFreeCompiledCallsDisjoint_append
+        (stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+          runtimeContract hinternal hnoConflict hpfx hsurface.1 hincluded)
+        (stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+          runtimeContract hinternal hnoConflict hsfx hsurface.2
+            (scopeNamesIncluded_foldl_stmtNextScope_sameHead _ hincluded))
 
 theorem stmtListHelperFreeStepInterface_of_supportedStmtList_of_surface_exceptMappingWrites
     {fields : List Field}

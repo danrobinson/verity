@@ -1262,10 +1262,9 @@ theorem compile_preserves_semantics_with_scalar_events
 
 /-- Scalar-event contract bridge with the source-side helper-free witness
 constructed from the supported body interface for selected bodies that remain
-plain contract-surface closed. This narrows the caller-supplied scalar-event
-frontier to the compiled-disjoint witness; mixed direct-emit/plain bodies now
-have reusable emit and append disjoint constructors, with the remaining generic
-gap concentrated in deriving the plain-head compiled witness from support. -/
+plain contract-surface closed. The compiled-disjoint witness for those plain
+bodies is derived from `SupportedStmtList` and the checked compiler output
+shape, so callers do not provide a compiler-generated callback. -/
 theorem compile_preserves_semantics_with_scalar_events_plain_bodies
     (model : CompilationModel)
     (selectors : List Nat)
@@ -1279,11 +1278,7 @@ theorem compile_preserves_semantics_with_scalar_events_plain_bodies
     (hfuelPos : 0 < hSupported.helperFuel)
     (hplainBodies :
       ∀ fn, fn ∈ selectorDispatchedFunctions model →
-        stmtListTouchesUnsupportedContractSurface fn.body = false)
-    (hstmtDisjoint :
-      ∀ fn, fn ∈ selectorDispatchedFunctions model →
-        StmtListHelperFreeCompiledCallsDisjoint { ir with internalFunctions := [] }
-          (SourceSemantics.effectiveFields model) (fn.params.map (·.name)) fn.body) :
+        stmtListTouchesUnsupportedContractSurface fn.body = false) :
     FunctionBody.sourceResultMatchesIRResult
       (supportedSourceContractSemanticsWithScalarEvents model selectors hSupported tx initialWorld)
       (interpretIR ir tx (FunctionBody.initialIRStateForTx model tx initialWorld)) := by
@@ -1315,6 +1310,23 @@ theorem compile_preserves_semantics_with_scalar_events_plain_bodies
         hnoConflict
         hbody.stmtList
         (hplainBodies fn hfn)
+    simpa [SourceSemantics.effectiveFields, hSupported.normalizedFields] using hfields
+  have hstmtDisjoint :
+      ∀ fn, fn ∈ selectorDispatchedFunctions model →
+        StmtListHelperFreeCompiledCallsDisjoint { ir with internalFunctions := [] }
+          (SourceSemantics.effectiveFields model) (fn.params.map (·.name)) fn.body := by
+    intro fn hfn
+    have hbody := (hSupported.supportedFunctionOfSelectorDispatched hfn).body
+    have hfields :
+        StmtListHelperFreeCompiledCallsDisjoint { ir with internalFunctions := [] }
+          model.fields (fn.params.map (·.name)) fn.body :=
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        { ir with internalFunctions := [] }
+        rfl
+        hnoConflict
+        hbody.stmtList
+        (hplainBodies fn hfn)
+        FunctionBody.scopeNamesIncluded_refl
     simpa [SourceSemantics.effectiveFields, hSupported.normalizedFields] using hfields
   exact compile_preserves_semantics_with_scalar_events
     (model := model)
