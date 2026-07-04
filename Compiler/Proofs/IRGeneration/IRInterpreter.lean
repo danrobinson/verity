@@ -6729,6 +6729,92 @@ theorem execIRFunction_mstore0_lit_return32
     IRState.foldl_setParamVars_events]
   simp [applyIRTransactionContext]
 
+private theorem uint256_ofNat_not_lt_of_ge
+    (n k : Nat) (hLe : k ≤ n)
+    (hSize : n < EvmYul.UInt256.size)
+    (hKSize : k < EvmYul.UInt256.size) :
+    ¬ ((EvmYul.UInt256.ofNat n : EvmYul.UInt256) <
+        (EvmYul.UInt256.ofNat k : EvmYul.UInt256)) := by
+  have hN : (EvmYul.UInt256.ofNat n).val.val = n := by
+    unfold EvmYul.UInt256.ofNat
+    simp [Id.run, Fin.ofNat, Nat.mod_eq_of_lt hSize]
+  have hK : (EvmYul.UInt256.ofNat k).val.val = k := by
+    unfold EvmYul.UInt256.ofNat
+    simp [Id.run, Fin.ofNat, Nat.mod_eq_of_lt hKSize]
+  intro hLt
+  have hh : (EvmYul.UInt256.ofNat n).val.val <
+      (EvmYul.UInt256.ofNat k).val.val := hLt
+  rw [hN, hK] at hh
+  omega
+
+private theorem evalIRExpr_lt_calldatasize_4_eq_zero_of_noWrap
+    (s : IRState)
+    (hNoWrap : 4 + s.calldata.length * 32 < Compiler.Constants.evmModulus) :
+    evalIRExpr s
+        (YulExpr.call "lt" [YulExpr.call "calldatasize" [], YulExpr.lit 4]) =
+      some 0 := by
+  have hNotLt : ¬ ((EvmYul.UInt256.ofNat
+        (4 + s.calldata.length * 32) : EvmYul.UInt256) <
+      (EvmYul.UInt256.ofNat 4 : EvmYul.UInt256)) := by
+    exact uint256_ofNat_not_lt_of_ge (4 + s.calldata.length * 32) 4
+      (by omega)
+      (by simpa [Compiler.Constants.evmModulus] using hNoWrap)
+      (by norm_num [EvmYul.UInt256.size])
+  simp [evalIRExpr, evalIRCall, evalIRExprs,
+    Compiler.Proofs.YulGeneration.Backends.evalBuiltinCallWithEvmYulLeanContext,
+    Compiler.Proofs.YulGeneration.Backends.evalBuiltinCallViaEvmYulLean,
+    Compiler.Proofs.YulGeneration.Backends.evalPureBuiltinViaEvmYulLean,
+    Nat.mod_eq_of_lt hNoWrap, hNotLt]
+
+theorem execIRFunction_calldata_guard0_mstore0_lit_return32
+    (fn : IRFunction) (tx : IRTransaction) (initialState : IRState)
+    (value : Nat)
+    (hNoWrap : 4 + tx.args.length * 32 < Compiler.Constants.evmModulus)
+    (hBody : fn.body = [
+      YulStmt.if_ (YulExpr.call "lt"
+          [YulExpr.call "calldatasize" [], YulExpr.lit 4])
+        [YulStmt.exprStmt (YulExpr.call "revert"
+          [YulExpr.lit 0, YulExpr.lit 0])],
+      YulStmt.exprStmt (YulExpr.call "mstore" [YulExpr.lit 0, YulExpr.lit value]),
+      YulStmt.exprStmt (YulExpr.call "return" [YulExpr.lit 0, YulExpr.lit 32])]) :
+    execIRFunction fn tx.args (applyIRTransactionContext tx initialState) =
+      { success := true
+        returnValue := some value
+        finalStorage := initialState.storage
+        finalMappings := Compiler.Proofs.storageAsMappings initialState.storage
+        events := initialState.events } := by
+  let body : List YulStmt := [
+      YulStmt.if_ (YulExpr.call "lt"
+          [YulExpr.call "calldatasize" [], YulExpr.lit 4])
+        [YulStmt.exprStmt (YulExpr.call "revert"
+          [YulExpr.lit 0, YulExpr.lit 0])],
+      YulStmt.exprStmt (YulExpr.call "mstore" [YulExpr.lit 0, YulExpr.lit value]),
+      YulStmt.exprStmt (YulExpr.call "return" [YulExpr.lit 0, YulExpr.lit 32])]
+  have hbody : ∀ (n : Nat) (s : IRState), 3 ≤ n →
+      4 + s.calldata.length * 32 < Compiler.Constants.evmModulus →
+      execIRStmts (n + 1) s body =
+        .return value { s with memory := fun o => if o = 0 then value else s.memory o } := by
+    intro n s hn hNoWrapState
+    obtain ⟨k, rfl⟩ : ∃ k, n = k + 3 := ⟨n - 3, by omega⟩
+    have hGuard := evalIRExpr_lt_calldatasize_4_eq_zero_of_noWrap s hNoWrapState
+    simp +decide [body, execIRStmts, execIRStmt, evalIRExpr, hGuard]
+  let stateWithParams :=
+    List.foldl (fun st entry => st.setVar entry.1.name entry.2)
+      (applyIRTransactionContext tx initialState) (fn.params.zip tx.args)
+  have hNoWrapState :
+      4 + stateWithParams.calldata.length * 32 < Compiler.Constants.evmModulus := by
+    simpa [stateWithParams, applyIRTransactionContext,
+      IRState.foldl_setParamVars_calldata] using hNoWrap
+  have hsize : 3 ≤ sizeOf body := by
+    simp [body]
+    omega
+  have hBody' : fn.body = body := by
+    simpa [body] using hBody
+  unfold execIRFunction
+  simp only [hBody']
+  rw [hbody _ stateWithParams hsize hNoWrapState]
+  simp [stateWithParams, applyIRTransactionContext]
+
 /-- `prepareInternalCalleeState` preserves storage from the caller. -/
 @[simp] theorem prepareInternalCalleeState_storage
     (callerState : IRState) (helper : IRInternalFunctionDef) (args : List Nat) :
