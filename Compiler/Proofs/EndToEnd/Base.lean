@@ -23755,6 +23755,77 @@ theorem fresh_of_checked?
 
 end NativeGeneratedSelectedUserBodyLetLiteralTripleTarget
 
+/-- Body-local literal-`let` sequences currently covered by the checked
+selected-body bridge under the fixed exact-fuel slack. This is intentionally
+bounded to one, two, or three statements until the public selected-body fuel
+theorem is generalized. -/
+inductive NativeGeneratedSelectedUserBodyLiteralLetSequenceBody :
+    List Yul.YulStmt → Prop where
+  | singletonLetLit
+      (target : String)
+      (assigned : Nat)
+      (hFresh : NativeGeneratedSelectedUserBodyLetLiteralTargetFresh target) :
+      NativeGeneratedSelectedUserBodyLiteralLetSequenceBody
+        [.let_ target (.lit assigned)]
+  | twoLetLit
+      (target0 : String)
+      (assigned0 : Nat)
+      (target1 : String)
+      (assigned1 : Nat)
+      (hFresh :
+        NativeGeneratedSelectedUserBodyLetLiteralPairTargetFresh target0
+          target1) :
+      NativeGeneratedSelectedUserBodyLiteralLetSequenceBody
+        [.let_ target0 (.lit assigned0), .let_ target1 (.lit assigned1)]
+  | threeLetLit
+      (target0 : String)
+      (assigned0 : Nat)
+      (target1 : String)
+      (assigned1 : Nat)
+      (target2 : String)
+      (assigned2 : Nat)
+      (hFresh :
+        NativeGeneratedSelectedUserBodyLetLiteralTripleTargetFresh target0
+          target1 target2) :
+      NativeGeneratedSelectedUserBodyLiteralLetSequenceBody
+        [.let_ target0 (.lit assigned0), .let_ target1 (.lit assigned1),
+          .let_ target2 (.lit assigned2)]
+
+namespace NativeGeneratedSelectedUserBodyLiteralLetSequenceBody
+
+/-- Executable checker for the bounded literal-`let` selected-body fragment. -/
+def checked? : List Yul.YulStmt → Bool
+  | [.let_ target (.lit _)] =>
+      NativeGeneratedSelectedUserBodyLetLiteralTarget.checked? target
+  | [.let_ target0 (.lit _), .let_ target1 (.lit _)] =>
+      NativeGeneratedSelectedUserBodyLetLiteralPairTarget.checked? target0
+        target1
+  | [.let_ target0 (.lit _), .let_ target1 (.lit _),
+      .let_ target2 (.lit _)] =>
+      NativeGeneratedSelectedUserBodyLetLiteralTripleTarget.checked? target0
+        target1 target2
+  | _ => false
+
+theorem of_checked? (body : List Yul.YulStmt)
+    (h : checked? body = true) :
+    NativeGeneratedSelectedUserBodyLiteralLetSequenceBody body := by
+  unfold checked? at h
+  split at h
+  · exact
+      singletonLetLit _ _
+        (NativeGeneratedSelectedUserBodyLetLiteralTarget.fresh_of_checked? h)
+  · exact
+      twoLetLit _ _ _ _
+        (NativeGeneratedSelectedUserBodyLetLiteralPairTarget.fresh_of_checked?
+          h)
+  · exact
+      threeLetLit _ _ _ _ _ _
+        (NativeGeneratedSelectedUserBodyLetLiteralTripleTarget.fresh_of_checked?
+          h)
+  · contradiction
+
+end NativeGeneratedSelectedUserBodyLiteralLetSequenceBody
+
 private theorem nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId_targetFresh
     (irContract : IRContract)
     (nativeContract : EvmYul.Yul.Ast.YulContract)
@@ -27730,6 +27801,74 @@ theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_three_let_lit
     (NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuelRevived.of_three_let_lit
       irContract tx hLetLit)
 
+/-- Bounded structural selected-body bridge for literal-`let` sequences.
+
+The bound is inherited from the current exact-fuel selected-body endpoint's
+fixed `+9` slack. Within that boundary, this theorem replaces the checker-facing
+surface of the one/two/three-statement literal-`let` cases with a single
+body-local predicate. -/
+theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_literal_let_sequence_le_three
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (hLetSeq :
+      ∀ fn,
+        irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+          some fn →
+        NativeGeneratedSelectedUserBodyLiteralLetSequenceBody fn.body) :
+    NativeGeneratedSelectedUserBodyResultBridgeAtFuel irContract tx state
+      observableSlots := by
+  cases hFind :
+      irContract.functions.find?
+        (fun fn => fn.selector == tx.functionSelector) with
+  | none =>
+      exact
+        NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_empty_body
+          irContract tx state observableSlots
+          (by
+            intro fn hFn
+            rw [hFind] at hFn
+            cases hFn)
+  | some selected =>
+      cases selected with
+      | mk name selector params ret payable body =>
+          have hSeq :=
+            hLetSeq
+              { name := name, selector := selector, params := params, ret := ret,
+                payable := payable, body := body } hFind
+          cases hSeq with
+          | singletonLetLit target assigned hFresh =>
+              exact
+                NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_singleton_let_lit
+                  irContract tx state observableSlots
+                  (by
+                    intro fn hFn
+                    rw [hFind] at hFn
+                    cases hFn
+                    exact ⟨target, assigned, rfl, hFresh⟩)
+          | twoLetLit target0 assigned0 target1 assigned1 hFresh =>
+              exact
+                NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_two_let_lit
+                  irContract tx state observableSlots
+                  (by
+                    intro fn hFn
+                    rw [hFind] at hFn
+                    cases hFn
+                    exact ⟨target0, assigned0, target1, assigned1, rfl, hFresh⟩)
+          | threeLetLit target0 assigned0 target1 assigned1 target2 assigned2
+              hFresh =>
+              exact
+                NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_three_let_lit
+                  irContract tx state observableSlots
+                  (by
+                    intro fn hFn
+                    rw [hFind] at hFn
+                    cases hFn
+                    exact
+                      ⟨target0, assigned0, target1, assigned1, target2,
+                        assigned2, rfl, hFresh⟩)
+
 /-- Block-wrapped leave selected user bodies discharge the unified selected-body
 result boundary. -/
 theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_block_leave
@@ -27849,6 +27988,13 @@ inductive NativeGeneratedSelectedUserBodySimpleShape
               (fun fn => fn.selector == tx.functionSelector) =
             some fn →
           ∃ text, fn.body = [.comment text])
+  | literalLetSequence
+      (hBody :
+        ∀ fn,
+          irContract.functions.find?
+              (fun fn => fn.selector == tx.functionSelector) =
+            some fn →
+          NativeGeneratedSelectedUserBodyLiteralLetSequenceBody fn.body)
   | singletonLetLit
       (hBody :
         ∀ fn,
@@ -27924,6 +28070,10 @@ inductive NativeGeneratedSelectedUserBodySimpleBody :
         (List.replicate n (Yul.YulStmt.block []))
   | singletonComment (text : String) :
       NativeGeneratedSelectedUserBodySimpleBody [.comment text]
+  | literalLetSequence
+      (body : List Yul.YulStmt)
+      (hSeq : NativeGeneratedSelectedUserBodyLiteralLetSequenceBody body) :
+      NativeGeneratedSelectedUserBodySimpleBody body
   | singletonLetLit
       (target : String)
       (assigned : Nat)
@@ -27965,63 +28115,54 @@ namespace NativeGeneratedSelectedUserBodySimpleBody
 
 /-- Executable checker for the body-local forms currently covered by the
 selected-body bridge. -/
-def checked? : List Yul.YulStmt → Bool
-  | [] => true
-  | [Yul.YulStmt.exprStmt (Yul.YulExpr.call "stop" [])] => true
-  | [.leave] => true
-  | [.block []] => true
-  | [.block [], .block []] => true
-  | [.block [], .block [], .block []] => true
-  | [.block [], .block [], .block [], .block []] => true
-  | [.block [], .block [], .block [], .block [], .block []] => true
-  | [.block [], .block [], .block [], .block [], .block [], .block []] => true
-  | [.block [], .block [], .block [], .block [], .block [], .block [], .block []] => true
-  | [.comment _] => true
-  | [.let_ target (.lit _)] =>
-      NativeGeneratedSelectedUserBodyLetLiteralTarget.checked? target
-  | [.let_ target0 (.lit _), .let_ target1 (.lit _)] =>
-      NativeGeneratedSelectedUserBodyLetLiteralPairTarget.checked? target0
-        target1
-  | [.let_ target0 (.lit _), .let_ target1 (.lit _),
-      .let_ target2 (.lit _)] =>
-      NativeGeneratedSelectedUserBodyLetLiteralTripleTarget.checked? target0
-        target1 target2
-  | [.block [.leave]] => true
-  | [.block [], .leave] => true
-  | [.block [], .block [.leave]] => true
-  | _ => false
+def checked? (body : List Yul.YulStmt) : Bool :=
+  if NativeGeneratedSelectedUserBodyLiteralLetSequenceBody.checked? body then
+    true
+  else
+    match body with
+    | [] => true
+    | [Yul.YulStmt.exprStmt (Yul.YulExpr.call "stop" [])] => true
+    | [.leave] => true
+    | [.block []] => true
+    | [.block [], .block []] => true
+    | [.block [], .block [], .block []] => true
+    | [.block [], .block [], .block [], .block []] => true
+    | [.block [], .block [], .block [], .block [], .block []] => true
+    | [.block [], .block [], .block [], .block [], .block [], .block []] => true
+    | [.block [], .block [], .block [], .block [], .block [], .block [], .block []] => true
+    | [.comment _] => true
+    | [.block [.leave]] => true
+    | [.block [], .leave] => true
+    | [.block [], .block [.leave]] => true
+    | _ => false
 
 theorem of_checked? (body : List Yul.YulStmt)
     (h : checked? body = true) :
     NativeGeneratedSelectedUserBodySimpleBody body := by
   unfold checked? at h
-  split at h
-  · exact empty
-  · exact stop
-  · exact leaveBody
-  · exact blockEmpty
-  · exact labelBlockEmpty
-  · exact emptyBlockPrefix 3 (by omega)
-  · exact emptyBlockPrefix 4 (by omega)
-  · exact emptyBlockPrefix 5 (by omega)
-  · exact emptyBlockPrefix 6 (by omega)
-  · exact emptyBlockPrefix 7 (by omega)
-  · exact singletonComment _
+  cases hLetSeq :
+      NativeGeneratedSelectedUserBodyLiteralLetSequenceBody.checked? body
+  · simp [hLetSeq] at h
+    split at h
+    · exact empty
+    · exact stop
+    · exact leaveBody
+    · exact blockEmpty
+    · exact labelBlockEmpty
+    · exact emptyBlockPrefix 3 (by omega)
+    · exact emptyBlockPrefix 4 (by omega)
+    · exact emptyBlockPrefix 5 (by omega)
+    · exact emptyBlockPrefix 6 (by omega)
+    · exact emptyBlockPrefix 7 (by omega)
+    · exact singletonComment _
+    · exact blockLeave
+    · exact labelLeave
+    · exact labelBlockLeave
+    · contradiction
   · exact
-      singletonLetLit _ _
-        (NativeGeneratedSelectedUserBodyLetLiteralTarget.fresh_of_checked? h)
-  · exact
-      twoLetLit _ _ _ _
-        (NativeGeneratedSelectedUserBodyLetLiteralPairTarget.fresh_of_checked?
-          h)
-  · exact
-      threeLetLit _ _ _ _ _ _
-        (NativeGeneratedSelectedUserBodyLetLiteralTripleTarget.fresh_of_checked?
-          h)
-  · exact blockLeave
-  · exact labelLeave
-  · exact labelBlockLeave
-  · contradiction
+      literalLetSequence body
+        (NativeGeneratedSelectedUserBodyLiteralLetSequenceBody.of_checked?
+          body hLetSeq)
 
 end NativeGeneratedSelectedUserBodySimpleBody
 
@@ -28117,6 +28258,14 @@ theorem of_checked?
                     rw [hFind] at hFn
                     cases hFn
                     exact ⟨text, rfl⟩)
+          | literalLetSequence body hSeq =>
+              exact
+                NativeGeneratedSelectedUserBodySimpleShape.literalLetSequence
+                  (by
+                    intro fn hFn
+                    rw [hFind] at hFn
+                    cases hFn
+                    exact hSeq)
           | singletonLetLit target assigned hFresh =>
               exact
                 NativeGeneratedSelectedUserBodySimpleShape.singletonLetLit
@@ -28211,6 +28360,10 @@ theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_simple_shape
   | singletonComment hBody =>
       exact
         NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_singleton_comment
+          irContract tx state observableSlots hBody
+  | literalLetSequence hBody =>
+      exact
+        NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_literal_let_sequence_le_three
           irContract tx state observableSlots hBody
   | singletonLetLit hBody =>
       exact
