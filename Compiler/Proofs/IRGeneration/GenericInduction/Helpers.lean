@@ -2174,6 +2174,43 @@ theorem stmtListHelperFreeStepInterface_of_supportedStmtList_of_surface
       hSupported
       hsurface)
 
+theorem stmtListHelperFreeNonEventStepInterface_of_helperFreeStepInterface_generic
+    {fields : List Field} :
+    ∀ {scope : List String} {stmts : List Stmt},
+      StmtListHelperFreeStepInterface fields scope stmts →
+        StmtListHelperFreeNonEventStepInterface fields scope stmts
+  | _, [], .nil => .nil
+  | _, _ :: _, .cons hhead htail =>
+      .cons (fun hhelper _hevent => hhead hhelper)
+        (stmtListHelperFreeNonEventStepInterface_of_helperFreeStepInterface_generic htail)
+
+theorem stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+    {fields : List Field}
+    {scope : List String}
+    {stmts : List Stmt}
+    (hnoConflict : firstFieldWriteSlotConflict fields = none)
+    (hSupported : SupportedStmtList fields scope stmts)
+    (hsurface : stmtListTouchesUnsupportedContractSurface stmts = false) :
+    StmtListHelperFreeNonEventStepInterface fields scope stmts :=
+  stmtListHelperFreeNonEventStepInterface_of_helperFreeStepInterface_generic
+    (stmtListHelperFreeStepInterface_of_supportedStmtList_of_surface
+      (fields := fields)
+      (scope := scope)
+      (stmts := stmts)
+      hnoConflict
+      hSupported
+      hsurface)
+
+theorem stmtListHelperFreeNonEventStepInterface_emit
+    {fields : List Field}
+    {scope : List String}
+    {eventName : String}
+    {args : List Expr} :
+    StmtListHelperFreeNonEventStepInterface fields scope [Stmt.emit eventName args] :=
+  .cons
+    (fun _hhelper hevent => by simp [stmtTouchesEventSurface] at hevent)
+    .nil
+
 theorem stmtListHelperFreeStepInterface_of_supportedStmtList_of_surface_exceptMappingWrites
     {fields : List Field}
     {scope : List String}

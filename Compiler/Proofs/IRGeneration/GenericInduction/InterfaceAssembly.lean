@@ -24,6 +24,37 @@ theorem stmtListHelperFreeStepInterface_of_core
       intro _
       exact ⟨compiledIR, hstep⟩
 
+theorem stmtListHelperFreeNonEventStepInterface_of_core
+    {fields : List Field}
+    {scope : List String}
+    {stmts : List Stmt}
+    (hgeneric : StmtListGenericCore fields scope stmts) :
+    StmtListHelperFreeNonEventStepInterface fields scope stmts := by
+  induction hgeneric with
+  | nil =>
+      exact .nil
+  | @cons scope stmt compiledIR rest hstep htail ih =>
+      refine .cons ?_ ih
+      intro _ _
+      exact ⟨compiledIR, hstep⟩
+
+theorem stmtListHelperFreeNonEventStepInterface_append
+    {fields : List Field}
+    {scope : List String}
+    {pfx sfx : List Stmt}
+    (hpfx :
+      StmtListHelperFreeNonEventStepInterface fields scope pfx)
+    (hsfx :
+      StmtListHelperFreeNonEventStepInterface fields
+        (List.foldl stmtNextScope scope pfx) sfx) :
+    StmtListHelperFreeNonEventStepInterface fields scope (pfx ++ sfx) := by
+  induction hpfx with
+  | nil =>
+      simpa using hsfx
+  | @cons scope stmt rest hhead htail ih =>
+      refine .cons hhead ?_
+      exact ih (by simpa [List.foldl] using hsfx)
+
 /-- Event head-step inventory for the exact generic induction seam. The
 event-aware contract-surface predicate supplies the support and expression
 closure facts; the catalog supplies the actual compiled-step proof for a direct
