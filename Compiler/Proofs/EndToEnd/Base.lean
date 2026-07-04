@@ -24335,6 +24335,118 @@ def revivedNative
       cases binding
       simp [toNativeBody, ih]
 
+def targetsFreshFrom :
+    EvmYul.Yul.State → List (String × Nat) → Prop
+  | _state, [] => True
+  | state, (target, assigned) :: rest =>
+      EvmYul.Yul.State.lookup? target state = none ∧
+        targetsFreshFrom
+          (state.insert target (EvmYul.UInt256.ofNat assigned)) rest
+
+theorem lowerStmtsNativeWithSwitchIds_toBody
+    (reservedNames : List String)
+    (start : Nat)
+    (bindings : List (String × Nat)) :
+    Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds
+        reservedNames start (toBody bindings) =
+      .ok (toNativeBody bindings, start) := by
+  induction bindings generalizing start with
+  | nil =>
+      simp [toBody, toNativeBody,
+        Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds_nil]
+  | cons binding rest ih =>
+      rcases binding with ⟨target, assigned⟩
+      simp [toBody, toNativeBody,
+        Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds_cons,
+        Compiler.Proofs.YulGeneration.Backends.lowerStmtGroupNativeWithSwitchIds_let,
+        ih, Bind.bind, Except.bind, Pure.pure, Except.pure]
+
+theorem execSeq_toNativeBody_ok_of_targetsFreshFrom
+    (fuel : Nat)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (shared : EvmYul.SharedState EvmYul.OperationType.Yul)
+    (store : EvmYul.Yul.VarStore)
+    (bindings : List (String × Nat))
+    (hFuel : bindings.length + 2 ≤ fuel)
+    (hFresh :
+      targetsFreshFrom (EvmYul.Yul.State.Ok shared store) bindings) :
+    EvmYul.Yul.execSeq fuel (toNativeBody bindings) codeOverride
+        (EvmYul.Yul.State.Ok shared store) =
+      .ok (applyNative (EvmYul.Yul.State.Ok shared store) bindings) := by
+  induction bindings generalizing fuel store with
+  | nil =>
+      cases fuel with
+      | zero =>
+          omega
+      | succ fuel' =>
+          simp [toNativeBody, applyNative, EvmYul.Yul.execSeq]
+  | cons binding rest ih =>
+      rcases binding with ⟨target, assigned⟩
+      dsimp [targetsFreshFrom] at hFresh
+      rcases hFresh with ⟨hHeadFresh, hRestFresh⟩
+      cases fuel with
+      | zero =>
+          simp at hFuel
+      | succ fuel1 =>
+          cases fuel1 with
+          | zero =>
+              simp at hFuel
+          | succ fuel2 =>
+              cases fuel2 with
+              | zero =>
+                  simp at hFuel
+              | succ fuelRest =>
+                  let stmt : EvmYul.Yul.Ast.Stmt :=
+                    .Let [target]
+                      (some
+                        (Compiler.Proofs.YulGeneration.Backends.lowerExprNative
+                          (Yul.YulExpr.lit assigned)))
+                  have hHead :
+                      EvmYul.Yul.exec (fuelRest + 2) stmt codeOverride
+                          (EvmYul.Yul.State.Ok shared store) =
+                        .ok
+                          ((EvmYul.Yul.State.Ok shared store).insert target
+                            (EvmYul.UInt256.ofNat assigned)) := by
+                    simpa [stmt,
+                      Compiler.Proofs.YulGeneration.Backends.lowerExprNative]
+                      using
+                        (Compiler.Proofs.YulGeneration.Backends.Native.exec_let_lit_ok
+                          fuelRest target (EvmYul.UInt256.ofNat assigned)
+                          codeOverride (EvmYul.Yul.State.Ok shared store)
+                          hHeadFresh)
+                  have hTailFuel : rest.length + 2 ≤ fuelRest + 2 := by
+                    simp at hFuel
+                    omega
+                  have hTailFresh :
+                      targetsFreshFrom
+                        (EvmYul.Yul.State.Ok shared
+                          (store.insert target
+                            (EvmYul.UInt256.ofNat assigned))) rest := by
+                    simpa [EvmYul.Yul.State.insert] using hRestFresh
+                  have hTail :=
+                    ih (fuelRest + 2)
+                      (store.insert target (EvmYul.UInt256.ofNat assigned))
+                      hTailFuel hTailFresh
+                  have hSeqFuel :
+                      fuelRest + 1 + 1 + 1 =
+                        Nat.succ (fuelRest + 2) := by
+                    omega
+                  rw [hSeqFuel]
+                  change
+                    EvmYul.Yul.execSeq (Nat.succ (fuelRest + 2))
+                        (stmt :: toNativeBody rest) codeOverride
+                        (EvmYul.Yul.State.Ok shared store) =
+                      .ok
+                        (applyNative (EvmYul.Yul.State.Ok shared store)
+                          ((target, assigned) :: rest))
+                  rw [Compiler.Proofs.YulGeneration.Backends.Native.execSeq_cons_ok_eq
+                    (fuelRest + 2) stmt (toNativeBody rest) codeOverride
+                    (EvmYul.Yul.State.Ok shared store)
+                    ((EvmYul.Yul.State.Ok shared store).insert target
+                      (EvmYul.UInt256.ofNat assigned)) hHead]
+                  simpa [stmt, toNativeBody, applyNative,
+                    EvmYul.Yul.State.insert] using hTail
+
 private theorem execIRStmts_continue
     (fuel : Nat)
     (state : IRState)
