@@ -628,6 +628,34 @@ theorem compile_ok_yields_noReceiveEntrypoint
       (ir := ir)
       (hcore := hcompile)
 
+theorem compile_ok_yields_noFallbackEntrypoint_with_scalar_events
+    (model : CompilationModel)
+    (selectors : List Nat)
+    (hSupported : SupportedSpecWithScalarEvents model selectors)
+    (ir : IRContract)
+    (hcompile : CompilationModel.compile model selectors = Except.ok ir) :
+    ir.fallbackEntrypoint = none :=
+  ContractShape.compile_ok_yields_noFallbackEntrypoint_with_scalar_events
+    (model := model)
+    (selectors := selectors)
+    (hSupported := hSupported)
+    (ir := ir)
+    (hcompile := hcompile)
+
+theorem compile_ok_yields_noReceiveEntrypoint_with_scalar_events
+    (model : CompilationModel)
+    (selectors : List Nat)
+    (hSupported : SupportedSpecWithScalarEvents model selectors)
+    (ir : IRContract)
+    (hcompile : CompilationModel.compile model selectors = Except.ok ir) :
+    ir.receiveEntrypoint = none :=
+  ContractShape.compile_ok_yields_noReceiveEntrypoint_with_scalar_events
+    (model := model)
+    (selectors := selectors)
+    (hSupported := hSupported)
+    (ir := ir)
+    (hcompile := hcompile)
+
 theorem compile_ok_yields_internalFunctions_nil_except_mapping_writes
     (model : CompilationModel)
     (selectors : List Nat)

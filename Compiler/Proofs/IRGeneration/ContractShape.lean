@@ -545,6 +545,104 @@ theorem compile_ok_yields_noReceiveEntrypoint
       (ir := ir)
       (hcore := hcompile)
 
+theorem compile_ok_yields_noFallbackEntrypoint_with_scalar_events
+    (model : CompilationModel)
+    (selectors : List Nat)
+    (hSupported : SupportedSpecWithScalarEvents model selectors)
+    (ir : IRContract)
+    (hcompile : CompilationModel.compile model selectors = Except.ok ir) :
+    ir.fallbackEntrypoint = none := by
+  unfold CompilationModel.compile at hcompile
+  simp only [bind, Except.bind] at hcompile
+  rcases hvalidate : validateCompileInputs model selectors with _ | validated
+  · simp [hvalidate] at hcompile
+  · simp [hvalidate] at hcompile
+    have hfallback :
+        pickUniqueFunctionByName "fallback" model.functions = Except.ok none :=
+      pickUniqueFunctionByName_eq_ok_none_of_absent
+        "fallback" model.functions hSupported.surface.noFallback
+    have hreceive :
+        pickUniqueFunctionByName "receive" model.functions = Except.ok none :=
+      pickUniqueFunctionByName_eq_ok_none_of_absent
+        "receive" model.functions hSupported.surface.noReceive
+    have hnoInternalFns :
+        model.functions.filter (·.isInternal) = [] :=
+      filterInternalFunctions_eq_nil_of_all_nonInternal model.functions
+        hSupported.noInternalFunctions
+    unfold compileValidatedCore at hcompile
+    rw [hnoInternalFns, hfallback, hreceive] at hcompile
+    simp only [bind, Except.bind, Option.mapM_none, pure, Except.pure] at hcompile
+    simp only [guardedFunctionsMapM_eq
+      (applySlotAliasRanges model.fields model.slotAliasRanges)
+      model.events model.errors model.adtTypes [] _
+      (supportedSpecWithScalarEvents_entries_lock_free hSupported)] at hcompile
+    rcases hmap :
+        ((model.functions.filter
+            (fun fn => !fn.isInternal && !isInteropEntrypointName fn.name)).zip selectors).mapM
+          (fun x => compileFunctionSpec
+            (applySlotAliasRanges model.fields model.slotAliasRanges)
+            model.events model.errors model.adtTypes x.2 x.1) with _ | irFns
+    · simp [hmap] at hcompile
+    · rcases hctor :
+          compileConstructor
+            (applySlotAliasRanges model.fields model.slotAliasRanges)
+            model.events model.errors model.adtTypes model.constructor with _ | deployStmts
+      · simp [hmap, hctor, hSupported.surface.noTemplateIntrinsics,
+          Pure.pure, Except.pure] at hcompile
+      · simp [hmap, hctor, hSupported.surface.noTemplateIntrinsics,
+          Pure.pure, Except.pure] at hcompile
+        cases hcompile
+        rfl
+
+theorem compile_ok_yields_noReceiveEntrypoint_with_scalar_events
+    (model : CompilationModel)
+    (selectors : List Nat)
+    (hSupported : SupportedSpecWithScalarEvents model selectors)
+    (ir : IRContract)
+    (hcompile : CompilationModel.compile model selectors = Except.ok ir) :
+    ir.receiveEntrypoint = none := by
+  unfold CompilationModel.compile at hcompile
+  simp only [bind, Except.bind] at hcompile
+  rcases hvalidate : validateCompileInputs model selectors with _ | validated
+  · simp [hvalidate] at hcompile
+  · simp [hvalidate] at hcompile
+    have hfallback :
+        pickUniqueFunctionByName "fallback" model.functions = Except.ok none :=
+      pickUniqueFunctionByName_eq_ok_none_of_absent
+        "fallback" model.functions hSupported.surface.noFallback
+    have hreceive :
+        pickUniqueFunctionByName "receive" model.functions = Except.ok none :=
+      pickUniqueFunctionByName_eq_ok_none_of_absent
+        "receive" model.functions hSupported.surface.noReceive
+    have hnoInternalFns :
+        model.functions.filter (·.isInternal) = [] :=
+      filterInternalFunctions_eq_nil_of_all_nonInternal model.functions
+        hSupported.noInternalFunctions
+    unfold compileValidatedCore at hcompile
+    rw [hnoInternalFns, hfallback, hreceive] at hcompile
+    simp only [bind, Except.bind, Option.mapM_none, pure, Except.pure] at hcompile
+    simp only [guardedFunctionsMapM_eq
+      (applySlotAliasRanges model.fields model.slotAliasRanges)
+      model.events model.errors model.adtTypes [] _
+      (supportedSpecWithScalarEvents_entries_lock_free hSupported)] at hcompile
+    rcases hmap :
+        ((model.functions.filter
+            (fun fn => !fn.isInternal && !isInteropEntrypointName fn.name)).zip selectors).mapM
+          (fun x => compileFunctionSpec
+            (applySlotAliasRanges model.fields model.slotAliasRanges)
+            model.events model.errors model.adtTypes x.2 x.1) with _ | irFns
+    · simp [hmap] at hcompile
+    · rcases hctor :
+          compileConstructor
+            (applySlotAliasRanges model.fields model.slotAliasRanges)
+            model.events model.errors model.adtTypes model.constructor with _ | deployStmts
+      · simp [hmap, hctor, hSupported.surface.noTemplateIntrinsics,
+          Pure.pure, Except.pure] at hcompile
+      · simp [hmap, hctor, hSupported.surface.noTemplateIntrinsics,
+          Pure.pure, Except.pure] at hcompile
+        cases hcompile
+        rfl
+
 end ContractShape
 
 end Compiler.Proofs.IRGeneration

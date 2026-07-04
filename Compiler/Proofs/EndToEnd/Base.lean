@@ -195,6 +195,48 @@ private theorem compile_preserves_native_evmYulLean_of_nativeResultsMatchOn
           htxNormalized hcalldataSizeFits hcompile)
       (hNativeIR := hNative)
 
+/-- Scalar-event native composition over an already-proved native/IR result
+match.
+
+This deliberately does not claim the generated log-body native bridge: callers
+still provide the native result match until that lower theorem is proved. -/
+theorem compile_preserves_native_evmYulLean_of_nativeResultsMatchOn_with_scalar_events
+    (model : CompilationModel.CompilationModel)
+    (selectors : List Nat)
+    (hSupported : SupportedSpecWithScalarEvents model selectors)
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (initialWorld : Verity.ContractState)
+    (observableSlots : List Nat)
+    (htxNormalized : Function.TxContextNormalized tx)
+    (hcalldataSizeFits : Function.TxCalldataSizeFitsEvm tx)
+    (hcompile : CompilationModel.compile model selectors = Except.ok irContract)
+    (hfuelPos : 0 < hSupported.helperFuel)
+    (hNative :
+      nativeResultsMatchOn observableSlots
+        (interpretIR irContract tx
+          (FunctionBody.initialIRStateForTx model tx initialWorld))
+        (Compiler.Proofs.YulGeneration.Backends.Native.interpretIRRuntimeNative
+          (Nat.succ (sizeOf (Compiler.emitYul irContract).runtimeCode))
+          irContract tx
+          (FunctionBody.initialIRStateForTx model tx initialWorld)
+          observableSlots)) :
+    sourceResultMatchesNativeOn observableSlots
+      (supportedSourceContractSemanticsWithScalarEvents
+        model selectors hSupported tx initialWorld)
+      (Compiler.Proofs.YulGeneration.Backends.Native.interpretIRRuntimeNative
+        (Nat.succ (sizeOf (Compiler.emitYul irContract).runtimeCode))
+        irContract tx
+        (FunctionBody.initialIRStateForTx model tx initialWorld)
+        observableSlots) := by
+  exact
+    sourceResultMatchesNativeOn_of_sourceResultMatchesIRResult_of_nativeResultsMatchOn
+      (hSourceIR :=
+        Compiler.Proofs.IRGeneration.Contract.compile_preserves_semantics_with_scalar_events_supported_bodies
+          model selectors hSupported irContract tx initialWorld
+          htxNormalized hcalldataSizeFits hcompile hfuelPos)
+      (hNativeIR := hNative)
+
 private theorem txNoWrap_of_calldataSizeFits
     {tx : IRTransaction}
     (h : Function.TxCalldataSizeFitsEvm tx) :
@@ -331,6 +373,34 @@ theorem generatedFunctionCalldataThreshold_of_compile_ok_supported
     4 + irFn.params.length * 32 < EvmYul.UInt256.size := by
   have hcompiled :=
     Compiler.Proofs.IRGeneration.Contract.compile_ok_yields_compiled_functions
+      spec selectors hSupported irContract hcompile
+  exact
+    compiledFunctionCalldataThreshold_of_forall₂ spec tx
+      (fun fn hfn => by
+        simpa [Compiler.Constants.evmModulus, EvmYul.UInt256.size] using
+          hSupported.selectorFunctionParamCalldataThreshold hfn)
+      (pairs := SourceSemantics.selectorFunctionPairs spec selectors)
+      (irFns := irContract.functions)
+      (fun entry hMem =>
+        by
+          simpa [SourceSemantics.selectorFunctionPairs] using
+            (List.of_mem_zip hMem).1)
+      hcompiled irFn hFind
+
+theorem generatedFunctionCalldataThreshold_of_compile_ok_supported_with_scalar_events
+    (spec : CompilationModel.CompilationModel)
+    (selectors : List Nat)
+    (hSupported : SupportedSpecWithScalarEvents spec selectors)
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (hcompile : CompilationModel.compile spec selectors = Except.ok irContract)
+    (irFn : IRFunction)
+    (hFind :
+      irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+        some irFn) :
+    4 + irFn.params.length * 32 < EvmYul.UInt256.size := by
+  have hcompiled :=
+    Compiler.Proofs.IRGeneration.Contract.compile_ok_yields_compiled_functions_with_scalar_events
       spec selectors hSupported irContract hcompile
   exact
     compiledFunctionCalldataThreshold_of_forall₂ spec tx
@@ -9366,6 +9436,41 @@ theorem compile_preserves_native_evmYulLean_of_nativeGeneratedCallDispatcherResu
       (Compiler.Proofs.IRGeneration.Contract.compile_preserves_semantics
         model selectors hSupported irContract tx initialWorld
         htxNormalized hcalldataSizeFits hcompile)
+      hNative
+
+/-- Scalar-event source-level compiler correctness over the direct projected
+`EvmYul.Yul.callDispatcher` result, assuming a native/IR result match for that
+same projection. -/
+theorem compile_preserves_native_evmYulLean_of_nativeGeneratedCallDispatcherResult_match_with_scalar_events
+    (model : CompilationModel.CompilationModel) (selectors : List Nat)
+    (hSupported : SupportedSpecWithScalarEvents model selectors)
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (initialWorld : Verity.ContractState)
+    (observableSlots : List Nat)
+    (nativeContract : EvmYul.Yul.Ast.YulContract)
+    (htxNormalized : Function.TxContextNormalized tx)
+    (hcalldataSizeFits : Function.TxCalldataSizeFitsEvm tx)
+    (hcompile : CompilationModel.compile model selectors = Except.ok irContract)
+    (hfuelPos : 0 < hSupported.helperFuel)
+    (hNative :
+      nativeResultsMatchOn observableSlots
+        (interpretIR irContract tx
+          (FunctionBody.initialIRStateForTx model tx initialWorld))
+        (nativeGeneratedCallDispatcherResultOf irContract tx
+          (FunctionBody.initialIRStateForTx model tx initialWorld)
+          observableSlots nativeContract)) :
+    sourceResultMatchesNativeOn observableSlots
+      (supportedSourceContractSemanticsWithScalarEvents
+        model selectors hSupported tx initialWorld)
+      (nativeGeneratedCallDispatcherResultOf irContract tx
+        (FunctionBody.initialIRStateForTx model tx initialWorld)
+        observableSlots nativeContract) := by
+  exact
+    sourceResultMatchesNativeOn_of_sourceResultMatchesIRResult_of_nativeResultsMatchOn
+      (Compiler.Proofs.IRGeneration.Contract.compile_preserves_semantics_with_scalar_events_supported_bodies
+        model selectors hSupported irContract tx initialWorld
+        htxNormalized hcalldataSizeFits hcompile hfuelPos)
       hNative
 
 /-- Supported compiler correctness for the direct generated
