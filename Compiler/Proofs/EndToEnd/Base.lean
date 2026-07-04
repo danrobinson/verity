@@ -23768,6 +23768,50 @@ private theorem execSeq_replicate_block_nil_ok_of_length_le
             (EvmYul.Yul.State.Ok shared store) hHead]
           exact ih fuel' shared store hRestFuel
 
+namespace NativeGeneratedSelectedUserBodyEmptyBlockPrefix
+
+/-- Executable checker for body-local no-op prefixes made only of empty
+blocks. -/
+def checked? : List Yul.YulStmt → Bool
+  | [] => true
+  | .block [] :: rest => checked? rest
+  | _ :: _ => false
+
+theorem checked?_eq_true :
+    ∀ body : List Yul.YulStmt,
+      checked? body = true →
+      ∃ n, body = List.replicate n (Yul.YulStmt.block [])
+  | [], _hCheck => ⟨0, rfl⟩
+  | .block [] :: rest, hCheck => by
+      have hRest : checked? rest = true := by
+        simpa [checked?] using hCheck
+      rcases checked?_eq_true rest hRest with ⟨n, hRestBody⟩
+      exact ⟨n + 1, by simp [List.replicate, hRestBody]⟩
+  | .comment _ :: _rest, hCheck => by
+      simp [checked?] at hCheck
+  | .let_ _ _ :: _rest, hCheck => by
+      simp [checked?] at hCheck
+  | .letMany _ _ :: _rest, hCheck => by
+      simp [checked?] at hCheck
+  | .assign _ _ :: _rest, hCheck => by
+      simp [checked?] at hCheck
+  | .exprStmt _ :: _rest, hCheck => by
+      simp [checked?] at hCheck
+  | .leave :: _rest, hCheck => by
+      simp [checked?] at hCheck
+  | .if_ _ _ :: _rest, hCheck => by
+      simp [checked?] at hCheck
+  | .for_ _ _ _ _ :: _rest, hCheck => by
+      simp [checked?] at hCheck
+  | .switch _ _ _ :: _rest, hCheck => by
+      simp [checked?] at hCheck
+  | .block (_ :: _) :: _rest, hCheck => by
+      simp [checked?] at hCheck
+  | .funcDef _ _ _ _ :: _rest, hCheck => by
+      simp [checked?] at hCheck
+
+end NativeGeneratedSelectedUserBodyEmptyBlockPrefix
+
 /-- IR-side match helper for any bounded empty-block-prefix body. -/
 private theorem nativeResultsMatchOn_execIRFunction_replicate_block_empty_body_markedPrefix
     (irContract : IRContract)
@@ -23835,26 +23879,34 @@ private theorem nativeResultsMatchOn_execIRFunction_replicate_block_empty_body_m
             (Compiler.runtimeCode irContract) observableSlots)
           switchId store)
 
-/-- Repeated empty-block selected user bodies execute as native no-ops under
-the current fixed selector-hit slack. The bound `n ≤ 7` is exactly the amount
-available from the public `+ 9` body-fuel boundary when the dynamic body fuel
-and case suffix are both zero. -/
-private theorem NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_block_empty_replicate_le_seven
+/-- Repeated empty-block selected user bodies execute as native no-ops when the
+caller supplies enough exact selector-hit body fuel. -/
+private theorem NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_block_empty_replicate_with_fuel
     (irContract : IRContract)
     (tx : IRTransaction)
     (state : IRState)
     (observableSlots : List Nat)
     (n : Nat)
-    (hBound : n ≤ 7)
     (hBlocks :
       ∀ fn,
         irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
           some fn →
-        fn.body = List.replicate n (Yul.YulStmt.block [])) :
+        fn.body = List.replicate n (Yul.YulStmt.block []))
+    (hFuel :
+      ∀ (fn : IRFunction),
+        irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+          some fn →
+        ∀ (reservedNames : List String) (n0 : Nat)
+          (cases' suffix : List (Nat × List EvmYul.Yul.Ast.Stmt)),
+          NativeGeneratedLoweredSwitchCases irContract reservedNames n0
+            cases' →
+          n + 2 ≤
+            nativeGeneratedSelectorHitUserBodyFuel irContract fn cases' +
+              suffix.length + 9) :
     NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived irContract tx
       state observableSlots := by
   intro nativeContract fn reservedNames n0 cases' bodyNative bodyEnd
-    userBodyStart _hLowerRuntime hFind _hLowerCases hUserBodyLower _hguards _hArgs
+    userBodyStart _hLowerRuntime hFind hLowerCases hUserBodyLower _hguards _hArgs
   have hBody : fn.body = List.replicate n (Yul.YulStmt.block []) :=
     hBlocks fn hFind
   rw [hBody] at hUserBodyLower
@@ -23887,7 +23939,7 @@ private theorem NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_bl
         n + 2 ≤
           nativeGeneratedSelectorHitUserBodyFuel irContract fn cases' +
             suffix.length + 9 := by
-      omega
+      exact hFuel fn hFind reservedNames n0 cases' suffix hLowerCases
     change
       EvmYul.Yul.execSeq
           (nativeGeneratedSelectorHitUserBodyFuel irContract fn cases' +
@@ -23908,6 +23960,30 @@ private theorem NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_bl
         irContract tx state observableSlots nativeContract fn switchId
         Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchHasSelectorStore
         n hBody
+
+/-- Repeated empty-block selected user bodies execute as native no-ops under
+the current fixed selector-hit slack. The bound `n ≤ 7` is exactly the amount
+available from the public `+ 9` body-fuel boundary when the dynamic body fuel
+and case suffix are both zero. -/
+private theorem NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_block_empty_replicate_le_seven
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (n : Nat)
+    (hBound : n ≤ 7)
+    (hBlocks :
+      ∀ fn,
+        irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+          some fn →
+        fn.body = List.replicate n (Yul.YulStmt.block [])) :
+    NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived irContract tx
+      state observableSlots :=
+  NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_block_empty_replicate_with_fuel
+    irContract tx state observableSlots n hBlocks
+    (by
+      intro fn hFind reservedNames n0 cases' suffix _hLowerCases
+      omega)
 
 /-- Freshness condition needed for accepting a singleton literal `let` selected
 body in the checked bridge. The target must not collide with the generated
@@ -28839,6 +28915,110 @@ theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_block_empty_with_la
     (NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuelRevived.of_block_empty_with_label_prefix
       irContract tx hLabelBlockEmpty)
 
+/-- Actual generated-case fuel bound for repeated empty-block selected bodies.
+
+The runtime-size proof already accounts for the selected `fn.body` payload in
+the actual lowered switch cases, so repeated empty blocks do not need the old
+fixed `n ≤ 7` slack cap at the compile-generated boundary. -/
+theorem nativeGeneratedSelectorHitUserBodyFuel_bound_of_block_empty_replicate_lowered_cases
+    {spec : CompilationModel.CompilationModel} {selectors : List Nat}
+    {irContract : IRContract}
+    {tx : IRTransaction}
+    {reservedNames : List String} {n0 : Nat}
+    {cases' : List (Nat × List EvmYul.Yul.Ast.Stmt)} {midN : Nat}
+    {fn : IRFunction} {n : Nat}
+    (hCompile : CompilationModel.compile spec selectors = .ok irContract)
+    (hSupported : SupportedSpec spec selectors)
+    (hFind :
+      irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+        some fn)
+    (hBody : fn.body = List.replicate n (Yul.YulStmt.block []))
+    (hLowerCases :
+      Compiler.Proofs.YulGeneration.Backends.lowerSwitchCasesNativeWithSwitchIds
+        reservedNames
+        (Compiler.Proofs.YulGeneration.Backends.freshNativeSwitchId
+          reservedNames n0 + 1)
+        (Compiler.Proofs.YulGeneration.Backends.Native.buildSwitchSourceCases
+          irContract.functions) = .ok (cases', midN))
+    (suffix : List (Nat × List EvmYul.Yul.Ast.Stmt)) :
+    n + 2 ≤
+      nativeGeneratedSelectorHitUserBodyFuel irContract fn cases' +
+        suffix.length + 9 := by
+  have hFuelBound30 :
+      cases'.length + 30 ≤ sizeOf (Compiler.emitYul irContract).runtimeCode := by
+    dsimp [nativeRuntimeDispatcherFuel]
+    by_cases hUsesMapping : irContract.usesMapping
+    · have hMapping : irContract.usesMapping = true := by
+        simpa using hUsesMapping
+      exact
+        sizeOf_emitYul_runtimeCode_mapping_ge_lowered_cases_length_plus30
+          hCompile hSupported hMapping hLowerCases
+    · have hNoMapping : irContract.usesMapping = false :=
+        Bool.eq_false_iff.2 hUsesMapping
+      exact
+        sizeOf_emitYul_runtimeCode_noMapping_ge_lowered_cases_length_plus30
+          hCompile hSupported hNoMapping hLowerCases
+  have hBodyFuel :
+      cases'.length + n + 23 ≤
+        sizeOf (Compiler.emitYul irContract).runtimeCode := by
+    have hBodySize :
+        cases'.length + fn.body.length + 23 ≤
+          sizeOf (Compiler.emitYul irContract).runtimeCode := by
+      dsimp [nativeRuntimeDispatcherFuel]
+      by_cases hUsesMapping : irContract.usesMapping
+      · have hMapping : irContract.usesMapping = true := by
+          simpa using hUsesMapping
+        exact
+          sizeOf_emitYul_runtimeCode_mapping_ge_lowered_cases_length_plus_selected_body_length_plus23
+            hCompile hSupported hMapping hFind hLowerCases
+      · have hNoMapping : irContract.usesMapping = false :=
+          Bool.eq_false_iff.2 hUsesMapping
+        exact
+          sizeOf_emitYul_runtimeCode_noMapping_ge_lowered_cases_length_plus_selected_body_length_plus23
+            hCompile hSupported hNoMapping hFind hLowerCases
+    simpa [hBody] using hBodySize
+  by_cases hPayable : fn.payable
+  · simp [nativeGeneratedSelectorHitUserBodyFuel, hPayable,
+      nativeRuntimeDispatcherFuel]
+    omega
+  · have hNonPayable : fn.payable = false := Bool.eq_false_iff.2 hPayable
+    simp [nativeGeneratedSelectorHitUserBodyFuel, hNonPayable,
+      nativeRuntimeDispatcherFuel]
+    omega
+
+/-- Structural selected-body bridge for repeated empty-block prefixes, with
+the remaining exact-fuel obligation exposed explicitly. -/
+theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_block_empty_replicate_with_fuel
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (n : Nat)
+    (hBlocks :
+      ∀ fn,
+        irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+          some fn →
+        fn.body = List.replicate n (Yul.YulStmt.block []))
+    (hFuel :
+      ∀ (fn : IRFunction),
+        irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+          some fn →
+        ∀ (reservedNames : List String) (n0 : Nat)
+          (cases' suffix : List (Nat × List EvmYul.Yul.Ast.Stmt)),
+          NativeGeneratedLoweredSwitchCases irContract reservedNames n0
+            cases' →
+          n + 2 ≤
+            nativeGeneratedSelectorHitUserBodyFuel irContract fn cases' +
+              suffix.length + 9) :
+    NativeGeneratedSelectedUserBodyResultBridgeAtFuel irContract tx state
+      observableSlots :=
+  NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_exec_only_and_preserves
+    irContract tx state observableSlots
+    (NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_block_empty_replicate_with_fuel
+      irContract tx state observableSlots n hBlocks hFuel)
+    (NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuelRevived.of_block_empty_replicate
+      irContract tx n hBlocks)
+
 /-- Bounded repeated empty-block selected user bodies discharge the unified
 selected-body result boundary. This is a structural no-op prefix bridge under
 the current exact-fuel theorem's fixed `+ 9` slack. -/
@@ -28856,12 +29036,38 @@ theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_block_empty_replica
         fn.body = List.replicate n (Yul.YulStmt.block [])) :
     NativeGeneratedSelectedUserBodyResultBridgeAtFuel irContract tx state
       observableSlots :=
-  NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_exec_only_and_preserves
-    irContract tx state observableSlots
-    (NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_block_empty_replicate_le_seven
-      irContract tx state observableSlots n hBound hBlocks)
-    (NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuelRevived.of_block_empty_replicate
-      irContract tx n hBlocks)
+  NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_block_empty_replicate_with_fuel
+    irContract tx state observableSlots n hBlocks
+    (by
+      intro fn hFind reservedNames n0 cases' suffix _hLowerCases
+      omega)
+
+/-- Compile-generated structural selected-body bridge for arbitrary repeated
+empty-block prefixes. -/
+theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_block_empty_replicate_lowered_cases
+    {spec : CompilationModel.CompilationModel} {selectors : List Nat}
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (hCompile : CompilationModel.compile spec selectors = .ok irContract)
+    (hSupported : SupportedSpec spec selectors)
+    (n : Nat)
+    (hBlocks :
+      ∀ fn,
+        irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+          some fn →
+        fn.body = List.replicate n (Yul.YulStmt.block [])) :
+    NativeGeneratedSelectedUserBodyResultBridgeAtFuel irContract tx state
+      observableSlots :=
+  NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_block_empty_replicate_with_fuel
+    irContract tx state observableSlots n hBlocks
+    (by
+      intro fn hFind reservedNames n0 cases' suffix hLowerCases
+      rcases hLowerCases with ⟨midN, hLowerCases⟩
+      exact
+        nativeGeneratedSelectorHitUserBodyFuel_bound_of_block_empty_replicate_lowered_cases
+          hCompile hSupported hFind (hBlocks fn hFind) hLowerCases suffix)
 
 /-- Singleton-comment selected user bodies discharge the unified selected-body
 result boundary. -/
@@ -29259,6 +29465,14 @@ inductive NativeGeneratedSelectedUserBodySimpleShape
               (fun fn => fn.selector == tx.functionSelector) =
             some fn →
           fn.body = List.replicate n (Yul.YulStmt.block []))
+  | emptyBlockPrefixUnbounded
+      (n : Nat)
+      (hBody :
+        ∀ fn,
+          irContract.functions.find?
+              (fun fn => fn.selector == tx.functionSelector) =
+            some fn →
+          fn.body = List.replicate n (Yul.YulStmt.block []))
   | singletonComment
       (hBody :
         ∀ fn,
@@ -29357,6 +29571,9 @@ inductive NativeGeneratedSelectedUserBodySimpleBody :
   | emptyBlockPrefix (n : Nat) (hBound : n ≤ 7) :
       NativeGeneratedSelectedUserBodySimpleBody
         (List.replicate n (Yul.YulStmt.block []))
+  | emptyBlockPrefixUnbounded (n : Nat) :
+      NativeGeneratedSelectedUserBodySimpleBody
+        (List.replicate n (Yul.YulStmt.block []))
   | singletonComment (text : String) :
       NativeGeneratedSelectedUserBodySimpleBody [.comment text]
   | literalLetSequence
@@ -29416,6 +29633,8 @@ def checked? (body : List Yul.YulStmt) : Bool :=
     true
   else if NativeGeneratedSelectedUserBodyLiteralLetSequenceBody.checked? body then
     true
+  else if NativeGeneratedSelectedUserBodyEmptyBlockPrefix.checked? body then
+    true
   else
     match body with
     | [] => true
@@ -29444,22 +29663,30 @@ theorem of_checked? (body : List Yul.YulStmt)
     cases hLetSeq :
       NativeGeneratedSelectedUserBodyLiteralLetSequenceBody.checked? body
     · simp [hLetSeq] at h
-      split at h
-      · exact empty
-      · exact stop
-      · exact leaveBody
-      · exact blockEmpty
-      · exact labelBlockEmpty
-      · exact emptyBlockPrefix 3 (by omega)
-      · exact emptyBlockPrefix 4 (by omega)
-      · exact emptyBlockPrefix 5 (by omega)
-      · exact emptyBlockPrefix 6 (by omega)
-      · exact emptyBlockPrefix 7 (by omega)
-      · exact singletonComment _
-      · exact blockLeave
-      · exact labelLeave
-      · exact labelBlockLeave
-      · contradiction
+      cases hEmptyBlocks :
+          NativeGeneratedSelectedUserBodyEmptyBlockPrefix.checked? body
+      · simp [hEmptyBlocks] at h
+        split at h
+        · exact empty
+        · exact stop
+        · exact leaveBody
+        · exact blockEmpty
+        · exact labelBlockEmpty
+        · exact emptyBlockPrefix 3 (by omega)
+        · exact emptyBlockPrefix 4 (by omega)
+        · exact emptyBlockPrefix 5 (by omega)
+        · exact emptyBlockPrefix 6 (by omega)
+        · exact emptyBlockPrefix 7 (by omega)
+        · exact singletonComment _
+        · exact blockLeave
+        · exact labelLeave
+        · exact labelBlockLeave
+        · contradiction
+      · exact
+          let ⟨n, hBody⟩ :=
+            NativeGeneratedSelectedUserBodyEmptyBlockPrefix.checked?_eq_true
+              body hEmptyBlocks
+          hBody ▸ emptyBlockPrefixUnbounded n
     · exact
         literalLetSequence body
           (NativeGeneratedSelectedUserBodyLiteralLetSequenceBody.of_checked?
@@ -29551,6 +29778,15 @@ theorem of_checked?
               exact
                 NativeGeneratedSelectedUserBodySimpleShape.emptyBlockPrefix
                   n hBound
+                  (by
+                    intro fn hFn
+                    rw [hFind] at hFn
+                    cases hFn
+                    rfl)
+          | emptyBlockPrefixUnbounded n =>
+              exact
+                NativeGeneratedSelectedUserBodySimpleShape.emptyBlockPrefixUnbounded
+                  n
                   (by
                     intro fn hFn
                     rw [hFind] at hFn
@@ -29674,6 +29910,10 @@ theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_simple_shape
       exact
         NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_block_empty_replicate_le_seven
           irContract tx state observableSlots n hBound hBody
+  | emptyBlockPrefixUnbounded n hBody =>
+      exact
+        NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_block_empty_replicate_lowered_cases
+          irContract tx state observableSlots hCompile hSupported n hBody
   | singletonComment hBody =>
       exact
         NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_singleton_comment
