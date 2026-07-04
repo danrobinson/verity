@@ -5723,6 +5723,218 @@ theorem execIRFunction_owner_guard_sstore_lit_sub_sload_lit_stop_revert
   rw [hRev]
   simp [applyIRTransactionContext]
 
+def maskedCalldataloadAddressWord (arg mask : Nat) : Nat :=
+  (EvmYul.UInt256.land (EvmYul.UInt256.ofNat arg)
+    (EvmYul.UInt256.ofNat mask)).toNat
+
+theorem execIRFunction_owner_guard_calldataload4_mask_sstore_lit_stop_success
+    (fn : IRFunction) (tx : IRTransaction) (initialState : IRState)
+    (arg : Nat) (rest : List Nat)
+    (ownerSlot writeSlot mask errSelector errLen errText : Nat)
+    (hOwner : tx.sender % EvmYul.UInt256.size =
+      (initialState.storage (IRStorageSlot.ofNat ownerSlot)).toNat %
+        EvmYul.UInt256.size)
+    (hArgs : tx.args = arg :: rest)
+    (hBody : fn.body = [
+      YulStmt.let_ "newOwner" (YulExpr.call "and" [
+        YulExpr.call "calldataload" [YulExpr.lit 4],
+        YulExpr.hex mask]),
+      YulStmt.if_
+        (YulExpr.call "iszero" [YulExpr.call "eq" [
+          YulExpr.call "caller" [],
+          YulExpr.call "sload" [YulExpr.lit ownerSlot]]])
+        [YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 0, YulExpr.hex errSelector]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 4, YulExpr.lit 32]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 36, YulExpr.lit errLen]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 68, YulExpr.hex errText]),
+         YulStmt.exprStmt (YulExpr.call "revert"
+            [YulExpr.lit 0, YulExpr.lit 100])],
+      YulStmt.exprStmt (YulExpr.call "sstore" [
+        YulExpr.lit writeSlot,
+        YulExpr.ident "newOwner"]),
+      YulStmt.exprStmt (YulExpr.call "stop" [])]) :
+    execIRFunction fn tx.args (applyIRTransactionContext tx initialState) =
+      { success := true
+        returnValue := none
+        finalStorage :=
+          Compiler.Proofs.abstractStoreStorageOrMapping initialState.storage
+            writeSlot (maskedCalldataloadAddressWord arg mask)
+        finalMappings :=
+          Compiler.Proofs.storageAsMappings
+            (Compiler.Proofs.abstractStoreStorageOrMapping initialState.storage
+              writeSlot (maskedCalldataloadAddressWord arg mask))
+        events := initialState.events } := by
+  let body : List YulStmt := [
+      YulStmt.let_ "newOwner" (YulExpr.call "and" [
+        YulExpr.call "calldataload" [YulExpr.lit 4],
+        YulExpr.hex mask]),
+      YulStmt.if_
+        (YulExpr.call "iszero" [YulExpr.call "eq" [
+          YulExpr.call "caller" [],
+          YulExpr.call "sload" [YulExpr.lit ownerSlot]]])
+        [YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 0, YulExpr.hex errSelector]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 4, YulExpr.lit 32]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 36, YulExpr.lit errLen]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 68, YulExpr.hex errText]),
+         YulStmt.exprStmt (YulExpr.call "revert"
+            [YulExpr.lit 0, YulExpr.lit 100])],
+      YulStmt.exprStmt (YulExpr.call "sstore" [
+        YulExpr.lit writeSlot,
+        YulExpr.ident "newOwner"]),
+      YulStmt.exprStmt (YulExpr.call "stop" [])]
+  have hbody : ∀ (n : Nat) (s : IRState), 4 ≤ n →
+      s.calldata = arg :: rest →
+      s.sender % EvmYul.UInt256.size =
+        (s.storage (IRStorageSlot.ofNat ownerSlot)).toNat %
+          EvmYul.UInt256.size →
+      execIRStmts (n + 1) s body =
+        .stop { s.setVar "newOwner" (maskedCalldataloadAddressWord arg mask) with
+          storage := (Compiler.Proofs.abstractStoreStorageOrMapping s.storage
+            writeSlot (maskedCalldataloadAddressWord arg mask)) } := by
+    intro n s hn hCalldata hOwnerState
+    obtain ⟨k, rfl⟩ : ∃ k, n = k + 4 := ⟨n - 4, by omega⟩
+    have hArgWord :
+        EvmYul.UInt256.ofNat (arg % Compiler.Constants.evmModulus) =
+          EvmYul.UInt256.ofNat arg := by
+      unfold EvmYul.UInt256.ofNat
+      simp [Compiler.Constants.evmModulus, EvmYul.UInt256.size, Id.run,
+        Fin.ofNat]
+    simp +decide [body, execIRStmts, execIRStmt, evalIRExpr, evalIRCall,
+      evalIRExprs, evalIRCall_sload_singleton,
+      Compiler.Proofs.abstractLoadStorageOrMapping,
+      Compiler.Proofs.YulGeneration.Backends.evalBuiltinCallWithEvmYulLeanContext,
+      Compiler.Proofs.YulGeneration.Backends.evalBuiltinCallViaEvmYulLean,
+      Compiler.Proofs.YulGeneration.Backends.evalPureBuiltinViaEvmYulLean,
+      Compiler.Proofs.YulGeneration.calldataloadWord,
+      hCalldata, hOwnerState, hArgWord, maskedCalldataloadAddressWord,
+      IRState.setVar, IRState.getVar]
+  have hsize : 4 ≤ sizeOf body := by
+    simp [body]
+    omega
+  have hBody' : fn.body = body := by
+    simpa [body] using hBody
+  unfold execIRFunction
+  simp only [hBody']
+  rw [hbody _ _ hsize]
+  · simp only [IRState.setVar_events, IRState.foldl_setParamVars_storage,
+      IRState.foldl_setParamVars_events]
+    simp [applyIRTransactionContext]
+  · simp [applyIRTransactionContext, hArgs]
+  · simpa [applyIRTransactionContext, IRState.foldl_setParamVars_sender,
+      IRState.foldl_setParamVars_storage] using hOwner
+
+theorem execIRFunction_owner_guard_calldataload4_mask_sstore_lit_stop_revert
+    (fn : IRFunction) (tx : IRTransaction) (initialState : IRState)
+    (arg : Nat) (rest : List Nat)
+    (ownerSlot writeSlot mask errSelector errLen errText : Nat)
+    (hNotOwner : tx.sender % EvmYul.UInt256.size ≠
+      (initialState.storage (IRStorageSlot.ofNat ownerSlot)).toNat %
+        EvmYul.UInt256.size)
+    (hArgs : tx.args = arg :: rest)
+    (hBody : fn.body = [
+      YulStmt.let_ "newOwner" (YulExpr.call "and" [
+        YulExpr.call "calldataload" [YulExpr.lit 4],
+        YulExpr.hex mask]),
+      YulStmt.if_
+        (YulExpr.call "iszero" [YulExpr.call "eq" [
+          YulExpr.call "caller" [],
+          YulExpr.call "sload" [YulExpr.lit ownerSlot]]])
+        [YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 0, YulExpr.hex errSelector]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 4, YulExpr.lit 32]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 36, YulExpr.lit errLen]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 68, YulExpr.hex errText]),
+         YulStmt.exprStmt (YulExpr.call "revert"
+            [YulExpr.lit 0, YulExpr.lit 100])],
+      YulStmt.exprStmt (YulExpr.call "sstore" [
+        YulExpr.lit writeSlot,
+        YulExpr.ident "newOwner"]),
+      YulStmt.exprStmt (YulExpr.call "stop" [])]) :
+    execIRFunction fn tx.args (applyIRTransactionContext tx initialState) =
+      { success := false
+        returnValue := none
+        finalStorage := initialState.storage
+        finalMappings := Compiler.Proofs.storageAsMappings initialState.storage
+        events := initialState.events } := by
+  let body : List YulStmt := [
+      YulStmt.let_ "newOwner" (YulExpr.call "and" [
+        YulExpr.call "calldataload" [YulExpr.lit 4],
+        YulExpr.hex mask]),
+      YulStmt.if_
+        (YulExpr.call "iszero" [YulExpr.call "eq" [
+          YulExpr.call "caller" [],
+          YulExpr.call "sload" [YulExpr.lit ownerSlot]]])
+        [YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 0, YulExpr.hex errSelector]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 4, YulExpr.lit 32]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 36, YulExpr.lit errLen]),
+         YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 68, YulExpr.hex errText]),
+         YulStmt.exprStmt (YulExpr.call "revert"
+            [YulExpr.lit 0, YulExpr.lit 100])],
+      YulStmt.exprStmt (YulExpr.call "sstore" [
+        YulExpr.lit writeSlot,
+        YulExpr.ident "newOwner"]),
+      YulStmt.exprStmt (YulExpr.call "stop" [])]
+  have hbody : ∀ (n : Nat) (s : IRState), 8 ≤ n →
+      s.calldata = arg :: rest →
+      s.sender % EvmYul.UInt256.size ≠
+        (s.storage (IRStorageSlot.ofNat ownerSlot)).toNat %
+          EvmYul.UInt256.size →
+      ∃ sRev, execIRStmts (n + 1) s body = .revert sRev := by
+    intro n s hn hCalldata hNotOwnerState
+    obtain ⟨k, rfl⟩ : ∃ k, n = k + 8 := ⟨n - 8, by omega⟩
+    have hArgWord :
+        EvmYul.UInt256.ofNat (arg % Compiler.Constants.evmModulus) =
+          EvmYul.UInt256.ofNat arg := by
+      unfold EvmYul.UInt256.ofNat
+      simp [Compiler.Constants.evmModulus, EvmYul.UInt256.size, Id.run,
+        Fin.ofNat]
+    simp +decide [body, execIRStmts, execIRStmt, evalIRExpr, evalIRCall,
+      evalIRExprs, evalIRCall_sload_singleton,
+      Compiler.Proofs.abstractLoadStorageOrMapping,
+      Compiler.Proofs.YulGeneration.Backends.evalBuiltinCallWithEvmYulLeanContext,
+      Compiler.Proofs.YulGeneration.Backends.evalBuiltinCallViaEvmYulLean,
+      Compiler.Proofs.YulGeneration.Backends.evalPureBuiltinViaEvmYulLean,
+      Compiler.Proofs.YulGeneration.calldataloadWord,
+      hCalldata, hNotOwnerState, hArgWord, IRState.setVar]
+  let stateWithParams :=
+    List.foldl (fun st entry => st.setVar entry.1.name entry.2)
+      (applyIRTransactionContext tx initialState) (fn.params.zip tx.args)
+  have hNotOwnerState :
+      stateWithParams.sender % EvmYul.UInt256.size ≠
+        (stateWithParams.storage (IRStorageSlot.ofNat ownerSlot)).toNat %
+          EvmYul.UInt256.size := by
+    simpa [stateWithParams, applyIRTransactionContext,
+      IRState.foldl_setParamVars_sender, IRState.foldl_setParamVars_storage]
+      using hNotOwner
+  have hCalldataState : stateWithParams.calldata = arg :: rest := by
+    simp [stateWithParams, applyIRTransactionContext, hArgs]
+  have hsize : 8 ≤ sizeOf body := by
+    simp [body]
+    omega
+  have hBody' : fn.body = body := by
+    simpa [body] using hBody
+  unfold execIRFunction
+  simp only [hBody']
+  obtain ⟨sRev, hRev⟩ := hbody _ stateWithParams hsize hCalldataState
+    hNotOwnerState
+  rw [hRev]
+  simp [applyIRTransactionContext]
+
 theorem execIRFunction_sstore0_add_sload0_lit_stop
     (fn : IRFunction) (tx : IRTransaction) (initialState : IRState)
     (delta : Nat)
