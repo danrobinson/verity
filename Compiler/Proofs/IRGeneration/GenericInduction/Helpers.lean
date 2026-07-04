@@ -1455,6 +1455,157 @@ theorem stmtListGenericCore_append
       simp
       exact StmtListGenericCore.cons hstep (ih hsuffix)
 
+private theorem scopeNamesIncluded_stmtNextScope_sameHead
+    {scope largerScope : List String}
+    (stmt : Stmt)
+    (hincluded : FunctionBody.scopeNamesIncluded scope largerScope) :
+    FunctionBody.scopeNamesIncluded
+      (stmtNextScope scope stmt) (stmtNextScope largerScope stmt) := by
+  intro name hmem
+  simp [stmtNextScope] at hmem ⊢
+  rcases hmem with hlocal | hscope
+  · exact Or.inl hlocal
+  · exact Or.inr (hincluded name hscope)
+
+private theorem scopeNamesIncluded_foldl_stmtNextScope_sameHead
+    {scope largerScope : List String}
+    (stmts : List Stmt)
+    (hincluded : FunctionBody.scopeNamesIncluded scope largerScope) :
+    FunctionBody.scopeNamesIncluded
+      (List.foldl stmtNextScope scope stmts)
+      (List.foldl stmtNextScope largerScope stmts) := by
+  induction stmts generalizing scope largerScope with
+  | nil =>
+      exact hincluded
+  | cons stmt rest ih =>
+      exact ih (scopeNamesIncluded_stmtNextScope_sameHead stmt hincluded)
+
+private theorem stmtListTouchesUnsupportedContractSurface_body_of_singleton_forEach_zero_early
+    {varName : String}
+    {body : List Stmt}
+    (hsurface :
+      stmtListTouchesUnsupportedContractSurface [Stmt.forEach varName (.literal 0) body] = false) :
+    stmtListTouchesUnsupportedContractSurface body = false := by
+  cases body with
+  | nil =>
+      simp [stmtListTouchesUnsupportedContractSurface]
+  | cons stmt rest =>
+      simp only [stmtListTouchesUnsupportedContractSurface,
+        stmtTouchesUnsupportedContractSurface, Bool.or_false,
+        Bool.or_eq_false_iff] at hsurface
+      exact Bool.or_eq_false_iff.mpr hsurface
+
+theorem supportedStmtList_of_scopeNamesIncluded_of_surface
+    {fields : List Field}
+    {scope largerScope : List String}
+    {stmts : List Stmt}
+    (hSupported : SupportedStmtList fields scope stmts)
+    (hsurface : stmtListTouchesUnsupportedContractSurface stmts = false)
+    (hincluded : FunctionBody.scopeNamesIncluded scope largerScope) :
+    SupportedStmtList fields largerScope stmts := by
+  induction hSupported generalizing largerScope with
+  | compileCore hcore =>
+      exact SupportedStmtList.compileCore
+        (stmtListCompileCore_of_scopeNamesIncluded hcore hincluded)
+  | terminalCore hterminal =>
+      exact SupportedStmtList.terminalCore
+        (stmtListTerminalCore_of_scopeNamesIncluded hterminal hincluded)
+  | setStorageSingleSlot hcore hinScope hfind =>
+      exact SupportedStmtList.setStorageSingleSlot hcore
+        (exprBoundNamesInScope_of_scopeNamesIncluded hinScope hincluded)
+        hfind
+  | setStorageAddrSingleSlot hcore hinScope hfind =>
+      exact SupportedStmtList.setStorageAddrSingleSlot hcore
+        (exprBoundNamesInScope_of_scopeNamesIncluded hinScope hincluded)
+        hfind
+  | setImmutableSingle hcore hinScope =>
+      exact SupportedStmtList.setImmutableSingle hcore
+        (exprBoundNamesInScope_of_scopeNamesIncluded hinScope hincluded)
+  | mstoreSingle hcoreOffset hinScopeOffset hcoreValue hinScopeValue =>
+      exact SupportedStmtList.mstoreSingle hcoreOffset
+        (exprBoundNamesInScope_of_scopeNamesIncluded hinScopeOffset hincluded)
+        hcoreValue
+        (exprBoundNamesInScope_of_scopeNamesIncluded hinScopeValue hincluded)
+  | tstoreSingle hcoreOffset hinScopeOffset hcoreValue hinScopeValue =>
+      exact SupportedStmtList.tstoreSingle hcoreOffset
+        (exprBoundNamesInScope_of_scopeNamesIncluded hinScopeOffset hincluded)
+        hcoreValue
+        (exprBoundNamesInScope_of_scopeNamesIncluded hinScopeValue hincluded)
+  | letStorageField hfind hfieldInScope =>
+      exact SupportedStmtList.letStorageField hfind (hincluded _ hfieldInScope)
+  | letStorageAddrField hfind hfieldInScope =>
+      exact SupportedStmtList.letStorageAddrField hfind (hincluded _ hfieldInScope)
+  | assignStorageField hfind hfieldInScope =>
+      exact SupportedStmtList.assignStorageField hfind (hincluded _ hfieldInScope)
+  | assignStorageAddrField hfind hfieldInScope =>
+      exact SupportedStmtList.assignStorageAddrField hfind (hincluded _ hfieldInScope)
+  | emitEvent hcoreArgs hinScopeArgs =>
+      exact False.elim (false_of_supportedStmtList_emitEvent_surface hsurface)
+  | pureHashingEcm hpure hcoreArgs hinScopeArgs =>
+      simp [stmtListTouchesUnsupportedContractSurface,
+        stmtTouchesUnsupportedContractSurface] at hsurface
+  | letMappingField hcore hinScope hslot =>
+      exact False.elim (false_of_supportedStmtList_letMappingField_surface hsurface)
+  | letMappingWordField hcore hinScope hslot =>
+      exact False.elim (false_of_supportedStmtList_letMappingWordField_surface hsurface)
+  | letMappingUintField hcore hinScope hslot =>
+      exact False.elim (false_of_supportedStmtList_letMappingUintField_surface hsurface)
+  | letMappingPackedWordField hcore hinScope hslot =>
+      exact False.elim (false_of_supportedStmtList_letMappingPackedWordField_surface hsurface)
+  | letMapping2Field hcore1 hinScope1 hcore2 hinScope2 hslot =>
+      exact False.elim (false_of_supportedStmtList_letMapping2Field_surface hsurface)
+  | letMapping2WordField hcore1 hinScope1 hcore2 hinScope2 hslot =>
+      exact False.elim (false_of_supportedStmtList_letMapping2WordField_surface hsurface)
+  | letStructMemberField hcore hinScope hslot =>
+      exact False.elim (false_of_supportedStmtList_letStructMemberField_surface hsurface)
+  | letStructMember2Field hcore1 hinScope1 hcore2 hinScope2 hslot =>
+      exact False.elim (false_of_supportedStmtList_letStructMember2Field_surface hsurface)
+  | setMappingUintSingle hkey hscopeKey hvalue hscopeValue hslot =>
+      exact False.elim (false_of_supportedStmtList_setMappingUintSingle_surface hsurface)
+  | setMappingChainSingle hkeys hscopeKeys hvalue hscopeValue hslot =>
+      exact False.elim (false_of_supportedStmtList_setMappingChainSingle_surface hsurface)
+  | setMappingSingle hkey hscopeKey hvalue hscopeValue hslot =>
+      exact False.elim (false_of_supportedStmtList_setMappingSingle_surface hsurface)
+  | setMappingWordSingle hkey hscopeKey hvalue hscopeValue hslot =>
+      exact False.elim (false_of_supportedStmtList_setMappingWordSingle_surface hsurface)
+  | setMappingPackedWordSingle hkey hscopeKey hvalue hscopeValue
+      hcompatValue hcompatPacked hcompatSlotWord hcompatSlotCleared hpacked hslot =>
+      exact False.elim (false_of_supportedStmtList_setMappingPackedWordSingle_surface hsurface)
+  | setStructMemberSingle hkey hscopeKey hvalue hscopeValue hslot hmembers hmember =>
+      exact False.elim (false_of_supportedStmtList_setStructMemberSingle_surface hsurface)
+  | setMapping2Single hkey1 hscope1 hkey2 hscope2 hvalue hscopeValue hslot =>
+      exact False.elim (false_of_supportedStmtList_setMapping2Single_surface hsurface)
+  | setMapping2WordSingle hkey1 hscope1 hkey2 hscope2 hvalue hscopeValue hslot =>
+      exact False.elim (false_of_supportedStmtList_setMapping2WordSingle_surface hsurface)
+  | setStructMember2Single hkey1 hscope1 hkey2 hscope2 hvalue hscopeValue
+      hslot hmembers hmember =>
+      exact False.elim (false_of_supportedStmtList_setStructMember2Single_surface hsurface)
+  | forEachLiteralBounded hbodyNames hbody ih =>
+      exact SupportedStmtList.forEachLiteralBounded
+        (fun name hmem => by
+          have hmem' := hbodyNames name hmem
+          simp at hmem' ⊢
+          rcases hmem' with hvar | hscope
+          · exact Or.inl hvar
+          · exact Or.inr (hincluded name hscope))
+        (ih (stmtListTouchesUnsupportedContractSurface_body_of_singleton_forEach_zero_early hsurface)
+          (scopeNamesIncluded_cons hincluded))
+  | forEachLiteralEmpty n =>
+      exact SupportedStmtList.forEachLiteralEmpty n
+  | requireClause clause _ ih =>
+      simp [stmtListTouchesUnsupportedContractSurface] at hsurface
+      exact SupportedStmtList.requireClause clause (ih hsurface.2 hincluded)
+  | iteTerminal hcond hinScope hthen helse =>
+      exact SupportedStmtList.iteTerminal hcond
+        (exprBoundNamesInScope_of_scopeNamesIncluded hinScope hincluded)
+        (stmtListTerminalCore_of_scopeNamesIncluded hthen hincluded)
+        (stmtListTerminalCore_of_scopeNamesIncluded helse hincluded)
+  | append _ _ ihPrefix ihSuffix =>
+      simp only [stmtListTouchesUnsupportedContractSurface_append, Bool.or_eq_false_iff] at hsurface
+      exact SupportedStmtList.append
+        (ihPrefix hsurface.1 hincluded)
+        (ihSuffix hsurface.2 (scopeNamesIncluded_foldl_stmtNextScope_sameHead _ hincluded))
+
 private theorem stmtNextScope_requireLiteralGuardFamilyClause
     {scope : List String}
     (clause : Verity.Core.Free.RequireLiteralGuardFamilyClause) :
