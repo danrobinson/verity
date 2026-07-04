@@ -1263,8 +1263,9 @@ theorem compile_preserves_semantics_with_scalar_events
 /-- Scalar-event contract bridge with the source-side helper-free witness
 constructed from the supported body interface for selected bodies that remain
 plain contract-surface closed. This narrows the caller-supplied scalar-event
-frontier to the compiled-disjoint witness; direct top-level emit heads still
-need the event-aware helper-free constructor. -/
+frontier to the compiled-disjoint witness; mixed direct-emit/plain bodies now
+have reusable emit and append disjoint constructors, with the remaining generic
+gap concentrated in deriving the plain-head compiled witness from support. -/
 theorem compile_preserves_semantics_with_scalar_events_plain_bodies
     (model : CompilationModel)
     (selectors : List Nat)

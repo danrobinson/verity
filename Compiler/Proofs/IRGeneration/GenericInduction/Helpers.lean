@@ -2211,6 +2211,37 @@ theorem stmtListHelperFreeNonEventStepInterface_emit
     (fun _hhelper hevent => by simp [stmtTouchesEventSurface] at hevent)
     .nil
 
+theorem stmtListHelperFreeCompiledCallsDisjoint_append
+    {runtimeContract : IRContract}
+    {fields : List Field}
+    {scope : List String}
+    {pfx sfx : List Stmt}
+    (hpfx : StmtListHelperFreeCompiledCallsDisjoint runtimeContract fields scope pfx)
+    (hsfx :
+      StmtListHelperFreeCompiledCallsDisjoint runtimeContract fields
+        (List.foldl stmtNextScope scope pfx) sfx) :
+    StmtListHelperFreeCompiledCallsDisjoint runtimeContract fields scope (pfx ++ sfx) := by
+  induction hpfx with
+  | nil =>
+      simpa using hsfx
+  | cons hhead htail ih =>
+      simpa [List.foldl_cons] using
+        (StmtListHelperFreeCompiledCallsDisjoint.cons hhead (ih hsfx))
+
+theorem stmtListHelperFreeCompiledCallsDisjoint_emit
+    {runtimeContract : IRContract}
+    {fields : List Field}
+    {scope : List String}
+    {eventName : String}
+    {args : List Expr} :
+    StmtListHelperFreeCompiledCallsDisjoint runtimeContract fields scope
+      [Stmt.emit eventName args] :=
+  .cons
+    (fun _hhelper compiledIR hcompile => by
+      simp [CompilationModel.compileStmt, CompilationModel.compileStmtWithFork,
+        CompilationModel.compileEmit, bind, Except.bind] at hcompile)
+    .nil
+
 theorem stmtListHelperFreeStepInterface_of_supportedStmtList_of_surface_exceptMappingWrites
     {fields : List Field}
     {scope : List String}

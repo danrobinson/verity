@@ -1,4 +1,5 @@
 import Compiler.Proofs.IRGeneration.Contract
+import Compiler.Proofs.IRGeneration.GenericInduction.Helpers
 import Compiler.Proofs.MappingSlot
 
 namespace Compiler.Proofs.IRGeneration.ContractFeatureTest
@@ -1242,12 +1243,6 @@ private def scalarEventSmokeSpec : CompilationModel :=
 
 private def scalarEventSmokeSelector : Nat := 0x22222222
 
-private theorem scalarEventSmoke_compileEmit_empty_events_ne_ok
-    (compiledIR : List YulStmt) :
-    compileEmit [] [] .calldata "Ping" [Expr.literal 7, Expr.literal 9] ≠
-      Except.ok compiledIR := by
-  simp [compileEmit, bind, Except.bind]
-
 private theorem scalarEventSmoke_noPackedFields :
     ∀ field ∈ scalarEventSmokeSpec.fields, field.packedBits = none := by
   intro field hfield
@@ -1394,13 +1389,14 @@ private theorem scalarEventSmoke_disjoint
   intro fn hfn
   simp [scalarEventSmokeSpec, selectorDispatchedFunctions, scalarEventSmokeFunction] at hfn
   rcases hfn with ⟨rfl, _hinternal, _hspecial⟩
-  exact .cons
-    (fun _hhelper compiledIR hcompile => by
-      have hbad := scalarEventSmoke_compileEmit_empty_events_ne_ok compiledIR
-      simp [SourceSemantics.effectiveFields, scalarEventSmokeSpec,
-        CompilationModel.compileStmt, CompilationModel.compileStmtWithFork] at hcompile
-      exact False.elim (hbad hcompile))
-    .nil
+  simpa [SourceSemantics.effectiveFields, scalarEventSmokeSpec,
+    scalarEventSmokeFunction] using
+      (stmtListHelperFreeCompiledCallsDisjoint_emit
+        (runtimeContract := { ir with internalFunctions := [] })
+        (fields := SourceSemantics.effectiveFields scalarEventSmokeSpec)
+        (scope := scalarEventSmokeFunction.params.map (·.name))
+        (eventName := "Ping")
+        (args := [Expr.literal 7, Expr.literal 9]))
 
 theorem scalarEventSmoke_compile_preserves_semantics_with_scalar_events
     (ir : IRContract)
