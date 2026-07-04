@@ -5173,6 +5173,47 @@ theorem execIRFunction_mstore0_sload0_return32
     IRState.foldl_setParamVars_events]
   simp [applyIRTransactionContext]
 
+theorem execIRFunction_mstore0_sload_lit_return32
+    (fn : IRFunction) (tx : IRTransaction) (initialState : IRState)
+    (slot : Nat)
+    (hBody : fn.body = [
+      YulStmt.exprStmt (YulExpr.call "mstore"
+        [YulExpr.lit 0, YulExpr.call "sload" [YulExpr.lit slot]]),
+      YulStmt.exprStmt (YulExpr.call "return" [YulExpr.lit 0, YulExpr.lit 32])]) :
+    execIRFunction fn tx.args (applyIRTransactionContext tx initialState) =
+      { success := true
+        returnValue := some ((initialState.storage (IRStorageSlot.ofNat slot)).toNat)
+        finalStorage := initialState.storage
+        finalMappings := Compiler.Proofs.storageAsMappings initialState.storage
+        events := initialState.events } := by
+  have hbody : ∀ (n : Nat) (s : IRState), 2 ≤ n →
+      execIRStmts (n + 1) s
+        [YulStmt.exprStmt (YulExpr.call "mstore"
+            [YulExpr.lit 0, YulExpr.call "sload" [YulExpr.lit slot]]),
+         YulStmt.exprStmt (YulExpr.call "return"
+            [YulExpr.lit 0, YulExpr.lit 32])] =
+          .return ((s.storage (IRStorageSlot.ofNat slot)).toNat)
+            { s with memory := fun o =>
+                if o = 0 then (s.storage (IRStorageSlot.ofNat slot)).toNat else s.memory o } := by
+    intro n s hn
+    obtain ⟨k, rfl⟩ : ∃ k, n = k + 2 := ⟨n - 2, by omega⟩
+    simp +decide only [execIRStmts, execIRStmt, evalIRExpr, evalIRCall_sload_singleton,
+      Compiler.Proofs.abstractLoadStorageOrMapping,
+      Option.bind_some, ↓reduceIte]
+  have hsize : 2 ≤ sizeOf
+      ([YulStmt.exprStmt (YulExpr.call "mstore"
+          [YulExpr.lit 0, YulExpr.call "sload" [YulExpr.lit slot]]),
+        YulStmt.exprStmt (YulExpr.call "return"
+          [YulExpr.lit 0, YulExpr.lit 32])] : List YulStmt) := by
+    simp
+    omega
+  unfold execIRFunction
+  simp only [hBody]
+  rw [hbody _ _ hsize]
+  simp only [IRState.foldl_setParamVars_storage,
+    IRState.foldl_setParamVars_events]
+  simp [applyIRTransactionContext]
+
 theorem execIRFunction_mstore0_lit_return32
     (fn : IRFunction) (tx : IRTransaction) (initialState : IRState)
     (value : Nat)
