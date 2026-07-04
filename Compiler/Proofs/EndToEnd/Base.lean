@@ -23628,6 +23628,100 @@ private theorem NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_bl
         Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchHasSelectorStore
         n hBody
 
+/-- Freshness condition needed for accepting a singleton literal `let` selected
+body in the checked bridge. The target must not collide with the generated
+selector bookkeeping variables or with the pre-existing `__has_selector`
+marker stored by the dispatcher prefix. -/
+def NativeGeneratedSelectedUserBodyLetLiteralTargetFresh
+    (target : String) : Prop :=
+  target ≠ "__has_selector" ∧
+    ∀ reservedNames n0,
+      target ≠
+        Compiler.Proofs.YulGeneration.Backends.nativeSwitchMatchedTempName
+          (Compiler.Proofs.YulGeneration.Backends.freshNativeSwitchId
+            reservedNames n0) ∧
+      target ≠
+        Compiler.Proofs.YulGeneration.Backends.nativeSwitchDiscrTempName
+          (Compiler.Proofs.YulGeneration.Backends.freshNativeSwitchId
+            reservedNames n0)
+
+namespace NativeGeneratedSelectedUserBodyLetLiteralTarget
+
+/-- Conservative executable freshness check for singleton literal `let` targets.
+Names shorter than the generated switch-name prefix cannot be generated
+switch temps; the explicit inequality rules out the dispatcher marker already
+present in the native prefix store. -/
+def checked? (target : String) : Bool :=
+  (target != "__has_selector") && decide (target.length < 29)
+
+theorem fresh_of_checked?
+    {target : String}
+    (hCheck : checked? target = true) :
+    NativeGeneratedSelectedUserBodyLetLiteralTargetFresh target := by
+  unfold checked? at hCheck
+  cases hNeHasSelector : (target != "__has_selector") <;>
+    simp [hNeHasSelector] at hCheck
+  refine ⟨by simpa using hNeHasSelector, ?_⟩
+  intro reservedNames n0
+  constructor
+  · intro hEq
+    have hLen := congrArg String.length hEq
+    have hp :
+        (toString "__verity_native_switch_matched_").length = 31 := by
+      decide
+    simp [Compiler.Proofs.YulGeneration.Backends.nativeSwitchMatchedTempName,
+      hp] at hLen
+    omega
+  · intro hEq
+    have hLen := congrArg String.length hEq
+    have hp :
+        (toString "__verity_native_switch_discr_").length = 29 := by
+      decide
+    simp [Compiler.Proofs.YulGeneration.Backends.nativeSwitchDiscrTempName,
+      hp] at hLen
+    omega
+
+end NativeGeneratedSelectedUserBodyLetLiteralTarget
+
+private theorem nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId_targetFresh
+    (irContract : IRContract)
+    (nativeContract : EvmYul.Yul.Ast.YulContract)
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (reservedNames : List String)
+    (n0 : Nat)
+    (target : String)
+    (hFresh : NativeGeneratedSelectedUserBodyLetLiteralTargetFresh target) :
+    EvmYul.Yul.State.lookup? target
+      (Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId
+        nativeContract (YulTransaction.ofIR tx) state.storage
+        (Compiler.Proofs.YulGeneration.Backends.Native.materializedStorageSlots
+          (Compiler.runtimeCode irContract) observableSlots)
+        (Compiler.Proofs.YulGeneration.Backends.freshNativeSwitchId
+          reservedNames n0)
+        Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchHasSelectorStore) =
+      none := by
+  have hTargetNeMatched :
+      target ≠
+        Compiler.Proofs.YulGeneration.Backends.nativeSwitchMatchedTempName
+          (Compiler.Proofs.YulGeneration.Backends.freshNativeSwitchId
+            reservedNames n0) :=
+    (hFresh.2 reservedNames n0).1
+  have hTargetNeDiscr :
+      target ≠
+        Compiler.Proofs.YulGeneration.Backends.nativeSwitchDiscrTempName
+          (Compiler.Proofs.YulGeneration.Backends.freshNativeSwitchId
+            reservedNames n0) :=
+    (hFresh.2 reservedNames n0).2
+  simp [Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId,
+    Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStorePrefixStateForId,
+    Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryState,
+    Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchHasSelectorStore,
+    EvmYul.Yul.State.insert, EvmYul.Yul.State.lookup?,
+    Finmap.lookup_insert_of_ne, hFresh.1, hTargetNeMatched,
+    hTargetNeDiscr]
+
 /-- Selected user bodies consisting of a single `.comment text` produce the
 same observable result as an empty body.
 
@@ -23753,6 +23847,177 @@ private theorem NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_si
         irContract tx state observableSlots nativeContract fn switchId
         Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchHasSelectorStore
         text hBody
+
+/-- Source-side singleton literal `let` execution falls through after updating
+only the local variable environment. Storage and logs are therefore projected
+from the parameter-initialized state unchanged. -/
+private theorem execIRFunction_singleton_let_lit_extract_eq
+    (fn : IRFunction)
+    (tx : IRTransaction)
+    (state : IRState)
+    (target : String)
+    (assigned : Nat)
+    (hBody : fn.body = [.let_ target (.lit assigned)]) :
+    execIRFunction fn tx.args (applyIRTransactionContext tx state) =
+      { success := true
+        returnValue := none
+        finalStorage := state.storage
+        finalMappings := Compiler.Proofs.storageAsMappings state.storage
+        events := state.events } := by
+  rw [execIRFunction]
+  simp [hBody, applyIRTransactionContext, execIRStmts, execIRStmt, evalIRExpr]
+
+/-- Singleton literal `let` selected user bodies produce the same observable
+storage/log result as the native `Let` that inserts the same local binding.
+The local binding itself is intentionally unobservable at this bridge layer. -/
+private theorem nativeResultsMatchOn_execIRFunction_singleton_let_lit_body_markedPrefix
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (nativeContract : EvmYul.Yul.Ast.YulContract)
+    (fn : IRFunction)
+    (switchId : Nat)
+    (store : EvmYul.Yul.VarStore)
+    (target : String)
+    (assigned : Nat)
+    (hBody : fn.body = [.let_ target (.lit assigned)]) :
+    nativeResultsMatchOn observableSlots
+      (execIRFunction fn tx.args (applyIRTransactionContext tx state))
+      (.ok
+        (Compiler.Proofs.YulGeneration.Backends.Native.projectResult
+          (YulTransaction.ofIR tx) state.storage state.events
+          (.ok
+            (((Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId
+              nativeContract (YulTransaction.ofIR tx) state.storage
+              (Compiler.Proofs.YulGeneration.Backends.Native.materializedStorageSlots
+                (Compiler.runtimeCode irContract) observableSlots)
+              switchId store).insert target (EvmYul.UInt256.ofNat assigned)).reviveJump, [])))) := by
+  simp only [nativeResultsMatchOn,
+    Compiler.Proofs.YulGeneration.Backends.Native.nativeResultsMatchOn]
+  rw [execIRFunction_singleton_let_lit_extract_eq fn tx state target assigned hBody]
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · simp [Compiler.Proofs.YulGeneration.Backends.Native.projectResult,
+      EvmYul.Yul.State.insert, EvmYul.Yul.State.reviveJump]
+  · simp [Compiler.Proofs.YulGeneration.Backends.Native.projectResult,
+      EvmYul.Yul.State.insert, EvmYul.Yul.State.reviveJump]
+  · intro slot hSlot
+    simpa [Compiler.Proofs.YulGeneration.Backends.Native.projectResult,
+      EvmYul.Yul.State.insert, EvmYul.Yul.State.reviveJump] using
+      (Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId_materializedStorageSlot
+        nativeContract (YulTransaction.ofIR tx) state.storage
+        (Compiler.Proofs.YulGeneration.Backends.Native.materializedStorageSlots
+          (Compiler.runtimeCode irContract) observableSlots)
+        switchId store slot
+        (Compiler.Proofs.YulGeneration.Backends.Native.observableSlot_mem_materializedStorageSlots
+          (Compiler.runtimeCode irContract) observableSlots slot hSlot)).symm
+  · simpa [Compiler.Proofs.YulGeneration.Backends.Native.projectLogsFromState,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStorePrefixStateForId,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryState,
+      Compiler.Proofs.YulGeneration.Backends.Native.projectResult,
+      EvmYul.Yul.State.insert] using
+        (Compiler.Proofs.YulGeneration.Backends.Native.projectLogsFromState_initialState
+          nativeContract (YulTransaction.ofIR tx) state.storage
+          (Compiler.Proofs.YulGeneration.Backends.Native.materializedStorageSlots
+            (Compiler.runtimeCode irContract) observableSlots))
+
+/-- Build the direct selected-user-body ExecBridge for singleton literal `let`
+bodies whose target is fresh for the generated dispatcher prefix. -/
+private theorem NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_singleton_let_lit
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (hLetLit :
+      ∀ fn,
+        irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+          some fn →
+        ∃ target assigned,
+          fn.body = [.let_ target (.lit assigned)] ∧
+          NativeGeneratedSelectedUserBodyLetLiteralTargetFresh target) :
+    NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived irContract tx
+      state observableSlots := by
+  intro nativeContract fn reservedNames n0 cases' bodyNative bodyEnd
+    userBodyStart _hLowerRuntime hFind hUserBodyLower _hguards _hArgs
+  obtain ⟨target, assigned, hBody, hFresh⟩ := hLetLit fn hFind
+  rw [hBody] at hUserBodyLower
+  simp [Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds_cons,
+    Compiler.Proofs.YulGeneration.Backends.lowerStmtGroupNativeWithSwitchIds_let,
+    Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds_nil,
+    Bind.bind, Except.bind, Pure.pure, Except.pure, List.append_nil]
+    at hUserBodyLower
+  rcases hUserBodyLower with ⟨rfl, _rfl⟩
+  let switchId :=
+    Compiler.Proofs.YulGeneration.Backends.freshNativeSwitchId reservedNames n0
+  let entry :=
+    Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId
+      nativeContract (YulTransaction.ofIR tx) state.storage
+      (Compiler.Proofs.YulGeneration.Backends.Native.materializedStorageSlots
+        (Compiler.runtimeCode irContract) observableSlots)
+      switchId
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchHasSelectorStore
+  let final := entry.insert target (EvmYul.UInt256.ofNat assigned)
+  let nativeYul :=
+    Compiler.Proofs.YulGeneration.Backends.Native.projectResult
+      (YulTransaction.ofIR tx) state.storage state.events
+      (.ok (final.reviveJump, []))
+  have hEntryFresh :
+      EvmYul.Yul.State.lookup? target entry = none := by
+    simpa [entry, switchId] using
+      nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId_targetFresh
+        irContract nativeContract tx state observableSlots reservedNames n0
+        target hFresh
+  have hFinalOk : ∃ shared store, final = EvmYul.Yul.State.Ok shared store := by
+    simp [final, entry,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStorePrefixStateForId,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryState,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemorySharedState,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchHasSelectorStore,
+      EvmYul.Yul.State.insert]
+  rcases hFinalOk with ⟨shared, store, hFinalOk⟩
+  refine ⟨final, nativeYul, shared, store, ?_, ?_, rfl, ?_⟩
+  · intro _pre suffix
+    let fuelBase := nativeGeneratedSelectorHitUserBodyFuel irContract fn cases' +
+      suffix.length
+    have hHead :
+        EvmYul.Yul.exec (Nat.succ (fuelBase + 7))
+            (.Let [target]
+              (some
+                (Compiler.Proofs.YulGeneration.Backends.lowerExprNative
+                  (Yul.YulExpr.lit assigned))))
+            (some nativeContract) entry =
+          .ok final := by
+      have hFuel : Nat.succ (fuelBase + 7) = (fuelBase + 6) + 2 := by
+        omega
+      rw [hFuel]
+      simpa [final, Compiler.Proofs.YulGeneration.Backends.lowerExprNative]
+        using
+          (Compiler.Proofs.YulGeneration.Backends.Native.exec_let_lit_ok
+            (fuelBase + 6) target (EvmYul.UInt256.ofNat assigned)
+            (some nativeContract) entry hEntryFresh)
+    have hSeqFuel :
+        nativeGeneratedSelectorHitUserBodyFuel irContract fn cases' +
+            suffix.length + 9 =
+          Nat.succ (Nat.succ (fuelBase + 7)) := by
+      dsimp [fuelBase]
+    rw [hSeqFuel]
+    exact
+      Compiler.Proofs.YulGeneration.Backends.Native.execSeq_singleton_ok_of_exec_ok
+        (fuelBase + 7)
+        (.Let [target]
+          (some
+            (Compiler.Proofs.YulGeneration.Backends.lowerExprNative
+              (Yul.YulExpr.lit assigned))))
+        (some nativeContract) entry final hHead
+  · rw [hFinalOk]
+    rfl
+  · exact
+      nativeResultsMatchOn_execIRFunction_singleton_let_lit_body_markedPrefix
+        irContract tx state observableSlots nativeContract fn switchId
+        Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchHasSelectorStore
+        target assigned hBody
 
 /-- Selected user bodies containing only `stop` execute as a native halt and
 project to the same observable result as `execIRFunction`. -/
@@ -25954,15 +26219,7 @@ private theorem NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuelRevived.o
           some fn →
         ∃ target assigned,
           fn.body = [.let_ target (.lit assigned)] ∧
-          ∀ reservedNames n0,
-            target ≠
-              Compiler.Proofs.YulGeneration.Backends.nativeSwitchMatchedTempName
-                (Compiler.Proofs.YulGeneration.Backends.freshNativeSwitchId
-                  reservedNames n0) ∧
-            target ≠
-              Compiler.Proofs.YulGeneration.Backends.nativeSwitchDiscrTempName
-                (Compiler.Proofs.YulGeneration.Backends.freshNativeSwitchId
-                  reservedNames n0)) :
+          NativeGeneratedSelectedUserBodyLetLiteralTargetFresh target) :
     NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuelRevived irContract tx := by
   intro nativeContract fn reservedNames n0 cases' body' bodyNative bodyStart
     bodyEnd userBodyStart _hLowerRuntime hFind _hCase _hBodyLower
@@ -25985,9 +26242,9 @@ private theorem NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuelRevived.o
   let discrName :=
     Compiler.Proofs.YulGeneration.Backends.nativeSwitchDiscrTempName switchId
   have hTargetNeMatched : matchedName ≠ target := by
-    exact Ne.symm (hFreshTemps reservedNames n0).1
+    exact Ne.symm (hFreshTemps.2 reservedNames n0).1
   have hTargetNeDiscr : discrName ≠ target := by
-    exact Ne.symm (hFreshTemps reservedNames n0).2
+    exact Ne.symm (hFreshTemps.2 reservedNames n0).2
   have hMatchedFresh :
       matchedName ∉
         Compiler.Proofs.YulGeneration.Backends.nativeStmtsWriteNames
@@ -26498,6 +26755,30 @@ theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_singleton_comment
     (NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuelRevived.of_singleton_comment
       irContract tx hComment)
 
+/-- Singleton literal-`let` selected user bodies discharge the unified
+selected-body result boundary when the target is fresh for generated
+dispatcher bookkeeping. -/
+theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_singleton_let_lit
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (hLetLit :
+      ∀ fn,
+        irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+          some fn →
+        ∃ target assigned,
+          fn.body = [.let_ target (.lit assigned)] ∧
+          NativeGeneratedSelectedUserBodyLetLiteralTargetFresh target) :
+    NativeGeneratedSelectedUserBodyResultBridgeAtFuel irContract tx state
+      observableSlots :=
+  NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_exec_only_and_preserves
+    irContract tx state observableSlots
+    (NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_singleton_let_lit
+      irContract tx state observableSlots hLetLit)
+    (NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuelRevived.of_singleton_let_lit
+      irContract tx hLetLit)
+
 /-- Block-wrapped leave selected user bodies discharge the unified selected-body
 result boundary. -/
 theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_block_leave
@@ -26617,6 +26898,15 @@ inductive NativeGeneratedSelectedUserBodySimpleShape
               (fun fn => fn.selector == tx.functionSelector) =
             some fn →
           ∃ text, fn.body = [.comment text])
+  | singletonLetLit
+      (hBody :
+        ∀ fn,
+          irContract.functions.find?
+              (fun fn => fn.selector == tx.functionSelector) =
+            some fn →
+          ∃ target assigned,
+            fn.body = [.let_ target (.lit assigned)] ∧
+            NativeGeneratedSelectedUserBodyLetLiteralTargetFresh target)
   | blockLeave
       (hBody :
         ∀ fn,
@@ -26658,6 +26948,12 @@ inductive NativeGeneratedSelectedUserBodySimpleBody :
         (List.replicate n (Yul.YulStmt.block []))
   | singletonComment (text : String) :
       NativeGeneratedSelectedUserBodySimpleBody [.comment text]
+  | singletonLetLit
+      (target : String)
+      (assigned : Nat)
+      (hFresh : NativeGeneratedSelectedUserBodyLetLiteralTargetFresh target) :
+      NativeGeneratedSelectedUserBodySimpleBody
+        [.let_ target (.lit assigned)]
   | blockLeave :
       NativeGeneratedSelectedUserBodySimpleBody [.block [.leave]]
   | labelLeave :
@@ -26682,6 +26978,8 @@ def checked? : List Yul.YulStmt → Bool
   | [.block [], .block [], .block [], .block [], .block [], .block []] => true
   | [.block [], .block [], .block [], .block [], .block [], .block [], .block []] => true
   | [.comment _] => true
+  | [.let_ target (.lit _)] =>
+      NativeGeneratedSelectedUserBodyLetLiteralTarget.checked? target
   | [.block [.leave]] => true
   | [.block [], .leave] => true
   | [.block [], .block [.leave]] => true
@@ -26703,6 +27001,9 @@ theorem of_checked? (body : List Yul.YulStmt)
   · exact emptyBlockPrefix 6 (by omega)
   · exact emptyBlockPrefix 7 (by omega)
   · exact singletonComment _
+  · exact
+      singletonLetLit _ _
+        (NativeGeneratedSelectedUserBodyLetLiteralTarget.fresh_of_checked? h)
   · exact blockLeave
   · exact labelLeave
   · exact labelBlockLeave
@@ -26802,6 +27103,14 @@ theorem of_checked?
                     rw [hFind] at hFn
                     cases hFn
                     exact ⟨text, rfl⟩)
+          | singletonLetLit target assigned hFresh =>
+              exact
+                NativeGeneratedSelectedUserBodySimpleShape.singletonLetLit
+                  (by
+                    intro fn hFn
+                    rw [hFind] at hFn
+                    cases hFn
+                    exact ⟨target, assigned, rfl, hFresh⟩)
           | blockLeave =>
               exact
                 NativeGeneratedSelectedUserBodySimpleShape.blockLeave
@@ -26867,6 +27176,10 @@ theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_simple_shape
   | singletonComment hBody =>
       exact
         NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_singleton_comment
+          irContract tx state observableSlots hBody
+  | singletonLetLit hBody =>
+      exact
+        NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_singleton_let_lit
           irContract tx state observableSlots hBody
   | blockLeave hBody =>
       exact
