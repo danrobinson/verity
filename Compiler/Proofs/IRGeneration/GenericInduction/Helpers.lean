@@ -2393,6 +2393,311 @@ theorem stmtListHelperFreeCompiledCallsDisjoint_emit
         CompilationModel.compileEmit, bind, Except.bind] at hcompile)
     .nil
 
+private theorem stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelNonEvent
+    {stmt : Stmt}
+    (hhead :
+      stmtTouchesEventSurface stmt = true ∨
+        stmtTouchesUnsupportedContractSurface stmt = false)
+    (hevent : stmtTouchesEventSurface stmt = false) :
+    stmtListTouchesUnsupportedContractSurface [stmt] = false := by
+  rcases hhead with heventTrue | hplain
+  · rw [hevent] at heventTrue
+    cases heventTrue
+  · simpa [stmtListTouchesUnsupportedContractSurface, hplain]
+
+private theorem stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+    {stmt : Stmt}
+    (hheads :
+      ∀ s, s ∈ [stmt] →
+        stmtTouchesEventSurface s = true ∨
+          stmtTouchesUnsupportedContractSurface s = false)
+    (hevent : stmtTouchesEventSurface stmt = false) :
+    stmtListTouchesUnsupportedContractSurface [stmt] = false :=
+  stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelNonEvent
+    (hheads stmt (by simp)) hevent
+
+private theorem stmtListCompileCore_singleton_requireLiteralGuardFamilyClause
+    {scope : List String}
+    (clause : Verity.Core.Free.RequireLiteralGuardFamilyClause) :
+    FunctionBody.StmtListCompileCore scope [clause.toStmt] := by
+  cases clause with
+  | mk family n m p q message =>
+      cases family with
+      | binary op =>
+          cases op <;>
+            simp [Verity.Core.Free.RequireLiteralGuardFamilyClause.toStmt] <;>
+            refine FunctionBody.StmtListCompileCore.require_ ?_ ?_
+              FunctionBody.StmtListCompileCore.nil <;>
+            (first
+            | intro name hmem
+              simp [FunctionBody.exprBoundNames] at hmem
+            | repeat constructor)
+      | andEqLt =>
+          simp [Verity.Core.Free.RequireLiteralGuardFamilyClause.toStmt]
+          refine FunctionBody.StmtListCompileCore.require_ ?_ ?_
+            FunctionBody.StmtListCompileCore.nil
+          · repeat constructor
+          · intro name hmem
+            simp [FunctionBody.exprBoundNames] at hmem
+      | orEqLt =>
+          simp [Verity.Core.Free.RequireLiteralGuardFamilyClause.toStmt]
+          refine FunctionBody.StmtListCompileCore.require_ ?_ ?_
+            FunctionBody.StmtListCompileCore.nil
+          · repeat constructor
+          · intro name hmem
+            simp [FunctionBody.exprBoundNames] at hmem
+
+theorem stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_topLevelEventHeads
+    {fields : List Field}
+    {scope : List String}
+    {stmts : List Stmt}
+    (hnoConflict : firstFieldWriteSlotConflict fields = none)
+    (hSupported : SupportedStmtList fields scope stmts)
+    (hheads :
+      ∀ s, s ∈ stmts →
+        stmtTouchesEventSurface s = true ∨
+          stmtTouchesUnsupportedContractSurface s = false) :
+    StmtListHelperFreeNonEventStepInterface fields scope stmts := by
+  induction hSupported with
+  | compileCore hcore =>
+      exact stmtListHelperFreeNonEventStepInterface_of_core
+        (stmtListGenericCore_of_stmtListCompileCore hcore)
+  | terminalCore hterminal =>
+      exact stmtListHelperFreeNonEventStepInterface_of_core
+        (stmtListGenericCore_of_stmtListTerminalCore hterminal)
+  | setStorageSingleSlot hcore hinScope hfind =>
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict (SupportedStmtList.setStorageSingleSlot hcore hinScope hfind) hplain
+  | setStorageAddrSingleSlot hcore hinScope hfind =>
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict (SupportedStmtList.setStorageAddrSingleSlot hcore hinScope hfind) hplain
+  | setImmutableSingle hcore hinScope =>
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict (SupportedStmtList.setImmutableSingle hcore hinScope) hplain
+  | mstoreSingle hcoreOffset hinScopeOffset hcoreValue hinScopeValue =>
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict
+        (SupportedStmtList.mstoreSingle hcoreOffset hinScopeOffset hcoreValue hinScopeValue)
+        hplain
+  | tstoreSingle hcoreOffset hinScopeOffset hcoreValue hinScopeValue =>
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict
+        (SupportedStmtList.tstoreSingle hcoreOffset hinScopeOffset hcoreValue hinScopeValue)
+        hplain
+  | letStorageField hfind hfieldInScope =>
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict (SupportedStmtList.letStorageField hfind hfieldInScope) hplain
+  | letStorageAddrField hfind hfieldInScope =>
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict (SupportedStmtList.letStorageAddrField hfind hfieldInScope) hplain
+  | assignStorageField hfind hfieldInScope =>
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict (SupportedStmtList.assignStorageField hfind hfieldInScope) hplain
+  | assignStorageAddrField hfind hfieldInScope =>
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict (SupportedStmtList.assignStorageAddrField hfind hfieldInScope) hplain
+  | emitEvent hcoreArgs hinScopeArgs =>
+      exact stmtListHelperFreeNonEventStepInterface_emit
+  | pureHashingEcm hpure hcoreArgs hinScopeArgs =>
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict (SupportedStmtList.pureHashingEcm hpure hcoreArgs hinScopeArgs) hplain
+  | letMappingField hcore hinScope hslot =>
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict (SupportedStmtList.letMappingField hcore hinScope hslot) hplain
+  | letMappingWordField hcore hinScope hslot =>
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict (SupportedStmtList.letMappingWordField hcore hinScope hslot) hplain
+  | letMappingUintField hcore hinScope hslot =>
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict (SupportedStmtList.letMappingUintField hcore hinScope hslot) hplain
+  | letMappingPackedWordField hcore hinScope hslot =>
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict (SupportedStmtList.letMappingPackedWordField hcore hinScope hslot) hplain
+  | letMapping2Field hcore1 hinScope1 hcore2 hinScope2 hslot =>
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict
+        (SupportedStmtList.letMapping2Field hcore1 hinScope1 hcore2 hinScope2 hslot)
+        hplain
+  | letMapping2WordField hcore1 hinScope1 hcore2 hinScope2 hslot =>
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict
+        (SupportedStmtList.letMapping2WordField hcore1 hinScope1 hcore2 hinScope2 hslot)
+        hplain
+  | letStructMemberField hcore hinScope hslot =>
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict (SupportedStmtList.letStructMemberField hcore hinScope hslot) hplain
+  | letStructMember2Field hcore1 hinScope1 hcore2 hinScope2 hslot =>
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict
+        (SupportedStmtList.letStructMember2Field hcore1 hinScope1 hcore2 hinScope2 hslot)
+        hplain
+  | setMappingUintSingle hkey hscopeKey hvalue hscopeValue hslot =>
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict
+        (SupportedStmtList.setMappingUintSingle hkey hscopeKey hvalue hscopeValue hslot)
+        hplain
+  | setMappingChainSingle hkeys hscopeKeys hvalue hscopeValue hslot =>
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict
+        (SupportedStmtList.setMappingChainSingle hkeys hscopeKeys hvalue hscopeValue hslot)
+        hplain
+  | setMappingSingle hkey hscopeKey hvalue hscopeValue hslot =>
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict
+        (SupportedStmtList.setMappingSingle hkey hscopeKey hvalue hscopeValue hslot)
+        hplain
+  | setMappingWordSingle hkey hscopeKey hvalue hscopeValue hslot =>
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict
+        (SupportedStmtList.setMappingWordSingle hkey hscopeKey hvalue hscopeValue hslot)
+        hplain
+  | setMappingPackedWordSingle hkey hscopeKey hvalue hscopeValue
+      hcompatValue hcompatPacked hcompatSlotWord hcompatSlotCleared hpacked hslot =>
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict
+        (SupportedStmtList.setMappingPackedWordSingle hkey hscopeKey hvalue hscopeValue
+          hcompatValue hcompatPacked hcompatSlotWord hcompatSlotCleared hpacked hslot)
+        hplain
+  | setStructMemberSingle hkey hscopeKey hvalue hscopeValue hslot hmembers hmember =>
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict
+        (SupportedStmtList.setStructMemberSingle hkey hscopeKey hvalue hscopeValue hslot
+          hmembers hmember)
+        hplain
+  | setMapping2Single hkey1 hscope1 hkey2 hscope2 hvalue hscopeValue hslot =>
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict
+        (SupportedStmtList.setMapping2Single hkey1 hscope1 hkey2 hscope2 hvalue
+          hscopeValue hslot)
+        hplain
+  | setMapping2WordSingle hkey1 hscope1 hkey2 hscope2 hvalue hscopeValue hslot =>
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict
+        (SupportedStmtList.setMapping2WordSingle hkey1 hscope1 hkey2 hscope2 hvalue
+          hscopeValue hslot)
+        hplain
+  | setStructMember2Single hkey1 hscope1 hkey2 hscope2 hvalue hscopeValue
+      hslot hmembers hmember =>
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict
+        (SupportedStmtList.setStructMember2Single hkey1 hscope1 hkey2 hscope2 hvalue
+          hscopeValue hslot hmembers hmember)
+        hplain
+  | forEachLiteralBounded hbodyNames hbody =>
+      rename_i scope varName body
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict (SupportedStmtList.forEachLiteralBounded hbodyNames hbody) hplain
+  | forEachLiteralEmpty n =>
+      rename_i scope varName
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict (SupportedStmtList.forEachLiteralEmpty n) hplain
+  | requireClause clause hrest ih =>
+      exact stmtListHelperFreeNonEventStepInterface_append
+        (stmtListHelperFreeNonEventStepInterface_of_core
+          (stmtListGenericCore_of_stmtListCompileCore
+            (stmtListCompileCore_singleton_requireLiteralGuardFamilyClause clause)))
+        (by
+          simpa [List.foldl, stmtNextScope_requireLiteralGuardFamilyClause clause] using
+            ih (fun s hmem => hheads s (List.mem_cons_of_mem _ hmem)))
+  | iteTerminal hcond hinScope hthen helse =>
+      rename_i scope cond thenBranch elseBranch
+      have hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      exact stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_surface
+        hnoConflict (SupportedStmtList.iteTerminal hcond hinScope hthen helse) hplain
+  | append hpfx hsfx ihPrefix ihSuffix =>
+      exact stmtListHelperFreeNonEventStepInterface_append
+        (ihPrefix (fun s hmem => hheads s (List.mem_append_left _ hmem)))
+        (ihSuffix (fun s hmem => hheads s (List.mem_append_right _ hmem)))
+
 private theorem yulStmtListCallsDisjoint_append
     {runtimeContract : IRContract} {front back : List YulStmt}
     (hfront : YulStmtListCallsDisjointFromInternalTable runtimeContract front)
@@ -2692,37 +2997,6 @@ private theorem yulStmtListCallsDisjoint_of_compiledCallsDisjoint
       exact yulStmtListCallsDisjoint_append
         (hhead hstmtSurface headIR hheadCompile)
         (ih (bodyIR := tailIR) hrestSurface htailCompile')
-
-private theorem stmtListCompileCore_singleton_requireLiteralGuardFamilyClause
-    {scope : List String}
-    (clause : Verity.Core.Free.RequireLiteralGuardFamilyClause) :
-    FunctionBody.StmtListCompileCore scope [clause.toStmt] := by
-  cases clause with
-  | mk family n m p q message =>
-      cases family with
-      | binary op =>
-          cases op <;>
-            simp [Verity.Core.Free.RequireLiteralGuardFamilyClause.toStmt] <;>
-            refine FunctionBody.StmtListCompileCore.require_ ?_ ?_
-              FunctionBody.StmtListCompileCore.nil <;>
-            (first
-            | intro name hmem
-              simp [FunctionBody.exprBoundNames] at hmem
-            | repeat constructor)
-      | andEqLt =>
-          simp [Verity.Core.Free.RequireLiteralGuardFamilyClause.toStmt]
-          refine FunctionBody.StmtListCompileCore.require_ ?_ ?_
-            FunctionBody.StmtListCompileCore.nil
-          · repeat constructor
-          · intro name hmem
-            simp [FunctionBody.exprBoundNames] at hmem
-      | orEqLt =>
-          simp [Verity.Core.Free.RequireLiteralGuardFamilyClause.toStmt]
-          refine FunctionBody.StmtListCompileCore.require_ ?_ ?_
-            FunctionBody.StmtListCompileCore.nil
-          · repeat constructor
-          · intro name hmem
-            simp [FunctionBody.exprBoundNames] at hmem
 
 theorem stmtListHelperFreeCompiledCallsDisjoint_of_stmtListTerminalCore_internalFunctions_nil
     (runtimeContract : IRContract)
@@ -3188,6 +3462,295 @@ theorem stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_
         (stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
           runtimeContract hinternal hnoConflict hsfx hsurface.2
             (scopeNamesIncluded_foldl_stmtNextScope_sameHead _ hincluded))
+
+theorem stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_topLevelEventHeads_internalFunctions_nil
+    (runtimeContract : IRContract)
+    (hinternal : runtimeContract.internalFunctions = [])
+    {fields : List Field}
+    (hnoConflict : firstFieldWriteSlotConflict fields = none) :
+    ∀ {scope : List String} {stmts : List Stmt},
+      SupportedStmtList fields scope stmts →
+      (∀ s, s ∈ stmts →
+        stmtTouchesEventSurface s = true ∨
+          stmtTouchesUnsupportedContractSurface s = false) →
+        StmtListHelperFreeCompiledCallsDisjoint runtimeContract fields scope stmts
+  | _, _, .compileCore hcore, _hheads =>
+      stmtListHelperFreeCompiledCallsDisjoint_of_stmtListCompileCore_internalFunctions_nil
+        runtimeContract hinternal (fields := fields) hcore
+  | _, _, .terminalCore hterminal, _hheads =>
+      stmtListHelperFreeCompiledCallsDisjoint_of_stmtListTerminalCore_internalFunctions_nil
+        runtimeContract hinternal (fields := fields) hterminal
+  | _, _, .setStorageSingleSlot hcore hinScope hfind, hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.setStorageSingleSlot hcore hinScope hfind) hplain
+        FunctionBody.scopeNamesIncluded_refl
+  | _, _, .setStorageAddrSingleSlot hcore hinScope hfind, hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.setStorageAddrSingleSlot hcore hinScope hfind) hplain
+        FunctionBody.scopeNamesIncluded_refl
+  | _, _, .setImmutableSingle hcore hinScope, hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.setImmutableSingle hcore hinScope) hplain
+        FunctionBody.scopeNamesIncluded_refl
+  | _, _, .mstoreSingle hcoreOffset hinScopeOffset hcoreValue hinScopeValue, hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.mstoreSingle hcoreOffset hinScopeOffset hcoreValue hinScopeValue)
+        hplain FunctionBody.scopeNamesIncluded_refl
+  | _, _, .tstoreSingle hcoreOffset hinScopeOffset hcoreValue hinScopeValue, hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.tstoreSingle hcoreOffset hinScopeOffset hcoreValue hinScopeValue)
+        hplain FunctionBody.scopeNamesIncluded_refl
+  | _, _, .letStorageField hfind hfieldInScope, hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.letStorageField hfind hfieldInScope) hplain
+        FunctionBody.scopeNamesIncluded_refl
+  | _, _, .letStorageAddrField hfind hfieldInScope, hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.letStorageAddrField hfind hfieldInScope) hplain
+        FunctionBody.scopeNamesIncluded_refl
+  | _, _, .assignStorageField hfind hfieldInScope, hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.assignStorageField hfind hfieldInScope) hplain
+        FunctionBody.scopeNamesIncluded_refl
+  | _, _, .assignStorageAddrField hfind hfieldInScope, hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.assignStorageAddrField hfind hfieldInScope) hplain
+        FunctionBody.scopeNamesIncluded_refl
+  | _, _, .emitEvent _ _, _hheads =>
+      stmtListHelperFreeCompiledCallsDisjoint_emit
+  | _, _, .pureHashingEcm hpure hcoreArgs hinScopeArgs, hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.pureHashingEcm hpure hcoreArgs hinScopeArgs) hplain
+        FunctionBody.scopeNamesIncluded_refl
+  | _, _, .letMappingField hcore hinScope hslot, hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.letMappingField hcore hinScope hslot) hplain
+        FunctionBody.scopeNamesIncluded_refl
+  | _, _, .letMappingWordField hcore hinScope hslot, hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.letMappingWordField hcore hinScope hslot) hplain
+        FunctionBody.scopeNamesIncluded_refl
+  | _, _, .letMappingUintField hcore hinScope hslot, hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.letMappingUintField hcore hinScope hslot) hplain
+        FunctionBody.scopeNamesIncluded_refl
+  | _, _, .letMappingPackedWordField hcore hinScope hslot, hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.letMappingPackedWordField hcore hinScope hslot) hplain
+        FunctionBody.scopeNamesIncluded_refl
+  | _, _, .letMapping2Field hcore1 hinScope1 hcore2 hinScope2 hslot, hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.letMapping2Field hcore1 hinScope1 hcore2 hinScope2 hslot)
+        hplain FunctionBody.scopeNamesIncluded_refl
+  | _, _, .letMapping2WordField hcore1 hinScope1 hcore2 hinScope2 hslot, hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.letMapping2WordField hcore1 hinScope1 hcore2 hinScope2 hslot)
+        hplain FunctionBody.scopeNamesIncluded_refl
+  | _, _, .letStructMemberField hcore hinScope hslot, hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.letStructMemberField hcore hinScope hslot) hplain
+        FunctionBody.scopeNamesIncluded_refl
+  | _, _, .letStructMember2Field hcore1 hinScope1 hcore2 hinScope2 hslot, hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.letStructMember2Field hcore1 hinScope1 hcore2 hinScope2 hslot)
+        hplain FunctionBody.scopeNamesIncluded_refl
+  | _, _, .setMappingUintSingle hkey hscopeKey hvalue hscopeValue hslot, hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.setMappingUintSingle hkey hscopeKey hvalue hscopeValue hslot)
+        hplain FunctionBody.scopeNamesIncluded_refl
+  | _, _, .setMappingChainSingle hkeys hscopeKeys hvalue hscopeValue hslot, hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.setMappingChainSingle hkeys hscopeKeys hvalue hscopeValue hslot)
+        hplain FunctionBody.scopeNamesIncluded_refl
+  | _, _, .setMappingSingle hkey hscopeKey hvalue hscopeValue hslot, hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.setMappingSingle hkey hscopeKey hvalue hscopeValue hslot)
+        hplain FunctionBody.scopeNamesIncluded_refl
+  | _, _, .setMappingWordSingle hkey hscopeKey hvalue hscopeValue hslot, hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.setMappingWordSingle hkey hscopeKey hvalue hscopeValue hslot)
+        hplain FunctionBody.scopeNamesIncluded_refl
+  | _, _, .setMappingPackedWordSingle hkey hscopeKey hvalue hscopeValue
+      hcompatValue hcompatPacked hcompatSlotWord hcompatSlotCleared hpacked hslot,
+      hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.setMappingPackedWordSingle hkey hscopeKey hvalue hscopeValue
+          hcompatValue hcompatPacked hcompatSlotWord hcompatSlotCleared hpacked hslot)
+        hplain FunctionBody.scopeNamesIncluded_refl
+  | _, _, .setStructMemberSingle hkey hscopeKey hvalue hscopeValue hslot hmembers hmember,
+      hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.setStructMemberSingle hkey hscopeKey hvalue hscopeValue hslot
+          hmembers hmember)
+        hplain FunctionBody.scopeNamesIncluded_refl
+  | _, _, .setMapping2Single hkey1 hscope1 hkey2 hscope2 hvalue hscopeValue hslot,
+      hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.setMapping2Single hkey1 hscope1 hkey2 hscope2 hvalue
+          hscopeValue hslot)
+        hplain FunctionBody.scopeNamesIncluded_refl
+  | _, _, .setMapping2WordSingle hkey1 hscope1 hkey2 hscope2 hvalue hscopeValue hslot,
+      hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.setMapping2WordSingle hkey1 hscope1 hkey2 hscope2 hvalue
+          hscopeValue hslot)
+        hplain FunctionBody.scopeNamesIncluded_refl
+  | _, _, .setStructMember2Single hkey1 hscope1 hkey2 hscope2 hvalue hscopeValue
+      hslot hmembers hmember, hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.setStructMember2Single hkey1 hscope1 hkey2 hscope2 hvalue
+          hscopeValue hslot hmembers hmember)
+        hplain FunctionBody.scopeNamesIncluded_refl
+  | _, _, .forEachLiteralBounded hbodyNames hbody, hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.forEachLiteralBounded hbodyNames hbody) hplain
+        FunctionBody.scopeNamesIncluded_refl
+  | _, _, .forEachLiteralEmpty n, hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.forEachLiteralEmpty n) hplain
+        FunctionBody.scopeNamesIncluded_refl
+  | _, _, .requireClause clause hrest, hheads =>
+      stmtListHelperFreeCompiledCallsDisjoint_append
+        (stmtListHelperFreeCompiledCallsDisjoint_of_stmtListCompileCore_internalFunctions_nil
+          runtimeContract hinternal (fields := fields)
+          (stmtListCompileCore_singleton_requireLiteralGuardFamilyClause clause))
+        (by
+          simpa [List.foldl, stmtNextScope_requireLiteralGuardFamilyClause clause] using
+            (stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_topLevelEventHeads_internalFunctions_nil
+              runtimeContract hinternal hnoConflict hrest
+              (fun s hmem => hheads s (List.mem_cons_of_mem _ hmem))))
+  | _, _, .iteTerminal hcond hinScope hthen helse, hheads =>
+      let hplain :=
+        stmtListTouchesUnsupportedContractSurface_singleton_of_topLevelHeads
+          hheads (by simp [stmtTouchesEventSurface])
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_surface_internalFunctions_nil
+        runtimeContract hinternal hnoConflict
+        (SupportedStmtList.iteTerminal hcond hinScope hthen helse) hplain
+        FunctionBody.scopeNamesIncluded_refl
+  | _, _, .append hpfx hsfx, hheads =>
+      stmtListHelperFreeCompiledCallsDisjoint_append
+        (stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_topLevelEventHeads_internalFunctions_nil
+          runtimeContract hinternal hnoConflict hpfx
+          (fun s hmem => hheads s (List.mem_append_left _ hmem)))
+        (stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_topLevelEventHeads_internalFunctions_nil
+          runtimeContract hinternal hnoConflict hsfx
+          (fun s hmem => hheads s (List.mem_append_right _ hmem)))
 
 theorem stmtListHelperFreeStepInterface_of_supportedStmtList_of_surface_exceptMappingWrites
     {fields : List Field}

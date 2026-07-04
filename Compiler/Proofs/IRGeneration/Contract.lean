@@ -1342,6 +1342,83 @@ theorem compile_preserves_semantics_with_scalar_events_plain_bodies
     (hhelperFree := hhelperFree)
     (hstmtDisjoint := hstmtDisjoint)
 
+/-- Scalar-event contract bridge for supported selected bodies whose top-level
+statements are either direct event emits or plain contract-surface-closed
+statements. Both proof-only premises required by the generic scalar-event
+function theorem are derived from the supported body interface. -/
+theorem compile_preserves_semantics_with_scalar_events_supported_bodies
+    (model : CompilationModel)
+    (selectors : List Nat)
+    (hSupported : SupportedSpecWithScalarEvents model selectors)
+    (ir : IRContract)
+    (tx : IRTransaction)
+    (initialWorld : Verity.ContractState)
+    (htxNormalized : Function.TxContextNormalized tx)
+    (hcalldataSizeFits : Function.TxCalldataSizeFitsEvm tx)
+    (hcompile : CompilationModel.compile model selectors = Except.ok ir)
+    (hfuelPos : 0 < hSupported.helperFuel) :
+    FunctionBody.sourceResultMatchesIRResult
+      (supportedSourceContractSemanticsWithScalarEvents model selectors hSupported tx initialWorld)
+      (interpretIR ir tx (FunctionBody.initialIRStateForTx model tx initialWorld)) := by
+  have hvalidateInputs : validateCompileInputs model selectors = Except.ok () := by
+    unfold CompilationModel.compile at hcompile
+    simp only [bind, Except.bind] at hcompile
+    rcases hvalidate : validateCompileInputs model selectors with _ | validated
+    · simp [hvalidate] at hcompile
+    · simpa using hvalidate
+  have hnoConflict : firstFieldWriteSlotConflict model.fields = none := by
+    simpa [hSupported.normalizedFields] using
+      validateCompileInputs_firstFieldWriteSlotConflict_eq_none
+        (spec := model)
+        (selectors := selectors)
+        hvalidateInputs
+  have hhelperFree :
+      ∀ fn, fn ∈ selectorDispatchedFunctions model →
+        StmtListHelperFreeNonEventStepInterface
+          (SourceSemantics.effectiveFields model) (fn.params.map (·.name)) fn.body := by
+    intro fn hfn
+    have hbody := (hSupported.supportedFunctionOfSelectorDispatched hfn).body
+    have hfields :
+        StmtListHelperFreeNonEventStepInterface model.fields
+          (fn.params.map (·.name)) fn.body :=
+      stmtListHelperFreeNonEventStepInterface_of_supportedStmtList_of_topLevelEventHeads
+        (fields := model.fields)
+        (scope := fn.params.map (·.name))
+        (stmts := fn.body)
+        hnoConflict
+        hbody.stmtList
+        hbody.topLevelEventHeads
+    simpa [SourceSemantics.effectiveFields, hSupported.normalizedFields] using hfields
+  have hstmtDisjoint :
+      ∀ fn, fn ∈ selectorDispatchedFunctions model →
+        StmtListHelperFreeCompiledCallsDisjoint { ir with internalFunctions := [] }
+          (SourceSemantics.effectiveFields model) (fn.params.map (·.name)) fn.body := by
+    intro fn hfn
+    have hbody := (hSupported.supportedFunctionOfSelectorDispatched hfn).body
+    have hfields :
+        StmtListHelperFreeCompiledCallsDisjoint { ir with internalFunctions := [] }
+          model.fields (fn.params.map (·.name)) fn.body :=
+      stmtListHelperFreeCompiledCallsDisjoint_of_supportedStmtList_of_topLevelEventHeads_internalFunctions_nil
+        { ir with internalFunctions := [] }
+        rfl
+        hnoConflict
+        hbody.stmtList
+        hbody.topLevelEventHeads
+    simpa [SourceSemantics.effectiveFields, hSupported.normalizedFields] using hfields
+  exact compile_preserves_semantics_with_scalar_events
+    (model := model)
+    (selectors := selectors)
+    (hSupported := hSupported)
+    (ir := ir)
+    (tx := tx)
+    (initialWorld := initialWorld)
+    (htxNormalized := htxNormalized)
+    (hcalldataSizeFits := hcalldataSizeFits)
+    (hcompile := hcompile)
+    (hfuelPos := hfuelPos)
+    (hhelperFree := hhelperFree)
+    (hstmtDisjoint := hstmtDisjoint)
+
 /-- Whole-contract Tier 2 bridge for specs whose selector-dispatched bodies use
 the alternate singleton-storage-write state interface. This keeps the contract
 proof on the same generic dispatch skeleton while widening only the function
