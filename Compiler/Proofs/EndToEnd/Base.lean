@@ -23400,6 +23400,234 @@ private theorem NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_bl
         Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchHasSelectorStore
         hBody
 
+/-- Native lowering maps a list of source empty blocks to the same-length list
+of native empty blocks without consuming switch ids. -/
+private theorem lowerStmtsNativeWithSwitchIds_replicate_block_empty
+    (reservedNames : List String)
+    (nextSwitchId n : Nat) :
+    Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds
+        reservedNames nextSwitchId
+        (List.replicate n (Yul.YulStmt.block [])) =
+      .ok (List.replicate n (EvmYul.Yul.Ast.Stmt.Block []), nextSwitchId) := by
+  induction n with
+  | zero =>
+      simp [Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds_nil]
+  | succ n ih =>
+      simp [List.replicate,
+        Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds_cons,
+        Compiler.Proofs.YulGeneration.Backends.lowerStmtGroupNativeWithSwitchIds_block,
+        ih, Bind.bind, Except.bind, Pure.pure, Except.pure]
+
+/-- Source execution of repeated empty blocks is a no-op once the sequence fuel
+covers the list spine and each block's entry step. -/
+private theorem execIRStmts_replicate_block_empty_continue
+    (n fuel : Nat)
+    (state : IRState)
+    (hFuel : n + 1 ≤ fuel) :
+    execIRStmts fuel state (List.replicate n (Yul.YulStmt.block [])) =
+      .continue state := by
+  induction n generalizing fuel state with
+  | zero =>
+      simp [execIRStmts]
+  | succ n ih =>
+      cases fuel with
+      | zero => omega
+      | succ fuel' =>
+          cases fuel' with
+          | zero => omega
+          | succ fuel'' =>
+              have hRest : n + 1 ≤ Nat.succ fuel'' := by
+                omega
+              simp [List.replicate, execIRStmts, execIRStmt,
+                ih (Nat.succ fuel'') state hRest]
+
+/-- Native execution of up to the available fuel's worth of empty blocks is a
+no-op on an already-`Ok` state. -/
+private theorem execSeq_replicate_block_nil_ok_of_length_le
+    (n fuel : Nat)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (shared : EvmYul.SharedState EvmYul.OperationType.Yul)
+    (store : EvmYul.Yul.VarStore)
+    (hFuel : n + 2 ≤ fuel) :
+    EvmYul.Yul.execSeq fuel
+        (List.replicate n (EvmYul.Yul.Ast.Stmt.Block []))
+        codeOverride (EvmYul.Yul.State.Ok shared store) =
+      .ok (EvmYul.Yul.State.Ok shared store) := by
+  induction n generalizing fuel shared store with
+  | zero =>
+      cases fuel with
+      | zero => omega
+      | succ fuel' =>
+          simp [EvmYul.Yul.execSeq]
+  | succ n ih =>
+      cases fuel with
+      | zero => omega
+      | succ fuel' =>
+          have hRestFuel : n + 2 ≤ fuel' := by
+            omega
+          have hHeadFuel : (fuel' - 2) + 2 = fuel' := by
+            omega
+          have hHead :
+              EvmYul.Yul.exec fuel'
+                  (EvmYul.Yul.Ast.Stmt.Block []) codeOverride
+                  (EvmYul.Yul.State.Ok shared store) =
+                .ok (EvmYul.Yul.State.Ok shared store) := by
+            rw [← hHeadFuel]
+            simpa [EvmYul.Yul.State.store,
+              Compiler.Proofs.YulGeneration.Backends.Native.ok_restrictStoreTo_self]
+              using
+                (Compiler.Proofs.YulGeneration.Backends.Native.exec_block_nil_ok
+                  (fuel' - 2) codeOverride
+                  (EvmYul.Yul.State.Ok shared store))
+          simp [List.replicate]
+          rw [Compiler.Proofs.YulGeneration.Backends.Native.execSeq_cons_ok_eq
+            fuel' (EvmYul.Yul.Ast.Stmt.Block [])
+            (List.replicate n (EvmYul.Yul.Ast.Stmt.Block []))
+            codeOverride (EvmYul.Yul.State.Ok shared store)
+            (EvmYul.Yul.State.Ok shared store) hHead]
+          exact ih fuel' shared store hRestFuel
+
+/-- IR-side match helper for any bounded empty-block-prefix body. -/
+private theorem nativeResultsMatchOn_execIRFunction_replicate_block_empty_body_markedPrefix
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (nativeContract : EvmYul.Yul.Ast.YulContract)
+    (fn : IRFunction)
+    (switchId : Nat)
+    (store : EvmYul.Yul.VarStore)
+    (n : Nat)
+    (hBody : fn.body = List.replicate n (Yul.YulStmt.block [])) :
+    nativeResultsMatchOn observableSlots
+      (execIRFunction fn tx.args (applyIRTransactionContext tx state))
+      (.ok
+        (Compiler.Proofs.YulGeneration.Backends.Native.projectResult
+          (YulTransaction.ofIR tx) state.storage state.events
+          (.ok
+            ((Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId
+              nativeContract (YulTransaction.ofIR tx) state.storage
+              (Compiler.Proofs.YulGeneration.Backends.Native.materializedStorageSlots
+                (Compiler.runtimeCode irContract) observableSlots)
+              switchId store).reviveJump, [])))) := by
+  let stateWithParams :=
+    List.foldl
+      (fun s x =>
+        match x with
+        | (p, v) => s.setVar p.name v)
+      (applyIRTransactionContext tx state) (fn.params.zip tx.args)
+  have hExec :
+      execIRStmts (sizeOf fn.body + 1) stateWithParams fn.body =
+        .continue stateWithParams := by
+    rw [hBody]
+    apply execIRStmts_replicate_block_empty_continue
+    have hSize :=
+      sizeOf_list_ge_length (List.replicate n (Yul.YulStmt.block []))
+    simp at hSize
+    omega
+  have hFunction :
+      execIRFunction fn tx.args (applyIRTransactionContext tx state) =
+        { success := true
+          returnValue := stateWithParams.returnValue
+          finalStorage := stateWithParams.storage
+          finalMappings := Compiler.Proofs.storageAsMappings stateWithParams.storage
+          events := stateWithParams.events } :=
+    execIRFunction_continue_extract_eq fn tx.args
+      (applyIRTransactionContext tx state) stateWithParams hExec
+  simp only [nativeResultsMatchOn,
+    Compiler.Proofs.YulGeneration.Backends.Native.nativeResultsMatchOn]
+  rw [hFunction]
+  simp [stateWithParams, applyIRTransactionContext,
+    Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId_reviveJump_eq]
+  constructor
+  · intro slot hSlot
+    exact
+      (Compiler.Proofs.YulGeneration.Backends.Native.projectResult_ok_nativeSwitchStoreMarkedPrefixStateForId_observableStorageSlot
+        nativeContract (YulTransaction.ofIR tx) state.storage state.events
+        (Compiler.runtimeCode irContract) observableSlots switchId store slot
+        hSlot).symm
+  · simpa [Compiler.Proofs.YulGeneration.Backends.Native.projectLogsFromState]
+      using
+        (Compiler.Proofs.YulGeneration.Backends.Native.projectLogsFromState_nativeSwitchStoreMarkedPrefixStateForId
+          nativeContract (YulTransaction.ofIR tx) state.storage
+          (Compiler.Proofs.YulGeneration.Backends.Native.materializedStorageSlots
+            (Compiler.runtimeCode irContract) observableSlots)
+          switchId store)
+
+/-- Repeated empty-block selected user bodies execute as native no-ops under
+the current fixed selector-hit slack. The bound `n ≤ 7` is exactly the amount
+available from the public `+ 9` body-fuel boundary when the dynamic body fuel
+and case suffix are both zero. -/
+private theorem NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_block_empty_replicate_le_seven
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (n : Nat)
+    (hBound : n ≤ 7)
+    (hBlocks :
+      ∀ fn,
+        irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+          some fn →
+        fn.body = List.replicate n (Yul.YulStmt.block [])) :
+    NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived irContract tx
+      state observableSlots := by
+  intro nativeContract fn reservedNames n0 cases' bodyNative bodyEnd
+    userBodyStart _hLowerRuntime hFind hUserBodyLower _hguards _hArgs
+  have hBody : fn.body = List.replicate n (Yul.YulStmt.block []) :=
+    hBlocks fn hFind
+  rw [hBody] at hUserBodyLower
+  rw [lowerStmtsNativeWithSwitchIds_replicate_block_empty] at hUserBodyLower
+  cases hUserBodyLower
+  let switchId :=
+    Compiler.Proofs.YulGeneration.Backends.freshNativeSwitchId reservedNames n0
+  let final :=
+    Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId
+      nativeContract (YulTransaction.ofIR tx) state.storage
+      (Compiler.Proofs.YulGeneration.Backends.Native.materializedStorageSlots
+        (Compiler.runtimeCode irContract) observableSlots)
+      switchId
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchHasSelectorStore
+  let nativeYul :=
+    Compiler.Proofs.YulGeneration.Backends.Native.projectResult
+      (YulTransaction.ofIR tx) state.storage state.events
+      (.ok (final.reviveJump, []))
+  have hFinalOk : ∃ shared store, final = EvmYul.Yul.State.Ok shared store := by
+    simp [final,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStorePrefixStateForId,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryState,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemorySharedState,
+      EvmYul.Yul.State.insert]
+  rcases hFinalOk with ⟨shared, store, hFinalOk⟩
+  refine ⟨final, nativeYul, shared, store, ?_, ?_, rfl, ?_⟩
+  · intro _pre suffix
+    have hFuel :
+        n + 2 ≤
+          nativeGeneratedSelectorHitUserBodyFuel irContract fn cases' +
+            suffix.length + 9 := by
+      omega
+    change
+      EvmYul.Yul.execSeq
+          (nativeGeneratedSelectorHitUserBodyFuel irContract fn cases' +
+            suffix.length + 9)
+          (List.replicate n (EvmYul.Yul.Ast.Stmt.Block []))
+          (some nativeContract) final =
+        .ok final
+    rw [hFinalOk]
+    exact
+      execSeq_replicate_block_nil_ok_of_length_le n
+        (nativeGeneratedSelectorHitUserBodyFuel irContract fn cases' +
+          suffix.length + 9)
+        (some nativeContract) shared store hFuel
+  · rw [hFinalOk]
+    rfl
+  · exact
+      nativeResultsMatchOn_execIRFunction_replicate_block_empty_body_markedPrefix
+        irContract tx state observableSlots nativeContract fn switchId
+        Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchHasSelectorStore
+        n hBody
+
 /-- Selected user bodies consisting of a single `.comment text` produce the
 same observable result as an empty body.
 
@@ -25568,6 +25796,88 @@ private theorem NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuelRevived.o
             reservedNames n0))
         (EvmYul.UInt256.ofNat tx.functionSelector) (some nativeContract)
 
+/-- Repeated empty native blocks preserve a revived word by structural
+composition of the single empty-block preservation lemma. -/
+private theorem NativeSeqPreservesWord_revived_replicate_empty_block
+    (name : EvmYul.Identifier)
+    (value : EvmYul.Literal)
+    (n : Nat)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract) :
+    Compiler.Proofs.YulGeneration.Backends.Native.NativeSeqPreservesWord_revived
+      name value (List.replicate n (EvmYul.Yul.Ast.Stmt.Block []))
+      codeOverride := by
+  induction n with
+  | zero =>
+      simpa [List.replicate] using
+        (Compiler.Proofs.YulGeneration.Backends.Native.NativeSeqPreservesWord_revived_nil
+          name value codeOverride)
+  | succ n ih =>
+      simpa [List.replicate] using
+        (Compiler.Proofs.YulGeneration.Backends.Native.NativeSeqPreservesWord_revived_cons
+          name value (EvmYul.Yul.Ast.Stmt.Block [])
+          (List.replicate n (EvmYul.Yul.Ast.Stmt.Block [])) codeOverride
+          (Compiler.Proofs.YulGeneration.Backends.Native.NativeStmtPreservesWord_revived_empty_block
+            name value codeOverride)
+          ih)
+
+/-- Repeated empty native blocks preserve a revived lookup by structural
+composition of the single empty-block lookup preservation lemma. -/
+private theorem NativeSeqPreservesLookup_revived_replicate_empty_block
+    (name : EvmYul.Identifier)
+    (value : EvmYul.Literal)
+    (n : Nat)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract) :
+    Compiler.Proofs.YulGeneration.Backends.Native.NativeSeqPreservesLookup_revived
+      name value (List.replicate n (EvmYul.Yul.Ast.Stmt.Block []))
+      codeOverride := by
+  induction n with
+  | zero =>
+      simpa [List.replicate] using
+        (Compiler.Proofs.YulGeneration.Backends.Native.NativeSeqPreservesLookup_revived_nil
+          name value codeOverride)
+  | succ n ih =>
+      simpa [List.replicate] using
+        (Compiler.Proofs.YulGeneration.Backends.Native.NativeSeqPreservesLookup_revived_cons
+          name value (EvmYul.Yul.Ast.Stmt.Block [])
+          (List.replicate n (EvmYul.Yul.Ast.Stmt.Block [])) codeOverride
+          (Compiler.Proofs.YulGeneration.Backends.Native.NativeStmtPreservesLookup_revived_empty_block
+            name value codeOverride)
+          ih)
+
+/-- Repeated empty-block selected user bodies preserve the generated selector
+bookkeeping in the revived form. -/
+private theorem NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuelRevived.of_block_empty_replicate
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (n : Nat)
+    (hBlocks :
+      ∀ fn,
+        irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+          some fn →
+        fn.body = List.replicate n (Yul.YulStmt.block [])) :
+    NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuelRevived irContract tx := by
+  intro nativeContract fn reservedNames n0 cases' body' bodyNative bodyStart
+    bodyEnd userBodyStart _hLowerRuntime hFind _hCase _hBodyLower
+    hUserBodyLower _pre _suffix _hCases
+  have hBody : fn.body = List.replicate n (Yul.YulStmt.block []) :=
+    hBlocks fn hFind
+  rw [hBody] at hUserBodyLower
+  rw [lowerStmtsNativeWithSwitchIds_replicate_block_empty] at hUserBodyLower
+  cases hUserBodyLower
+  refine ⟨?_, ?_⟩
+  · exact
+      NativeSeqPreservesWord_revived_replicate_empty_block
+        (Compiler.Proofs.YulGeneration.Backends.nativeSwitchMatchedTempName
+          (Compiler.Proofs.YulGeneration.Backends.freshNativeSwitchId
+            reservedNames n0))
+        (EvmYul.UInt256.ofNat 1) n (some nativeContract)
+  · exact
+      NativeSeqPreservesLookup_revived_replicate_empty_block
+        (Compiler.Proofs.YulGeneration.Backends.nativeSwitchDiscrTempName
+          (Compiler.Proofs.YulGeneration.Backends.freshNativeSwitchId
+            reservedNames n0))
+        (EvmYul.UInt256.ofNat tx.functionSelector) n (some nativeContract)
+
 /-- `[.comment text]` selected user bodies preserve the generated matched flag
 in the revived form. Lowering is identical to `of_block_empty`. -/
 private theorem NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuelRevived.of_singleton_comment
@@ -26040,6 +26350,30 @@ theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_block_empty_with_la
     (NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuelRevived.of_block_empty_with_label_prefix
       irContract tx hLabelBlockEmpty)
 
+/-- Bounded repeated empty-block selected user bodies discharge the unified
+selected-body result boundary. This is a structural no-op prefix bridge under
+the current exact-fuel theorem's fixed `+ 9` slack. -/
+theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_block_empty_replicate_le_seven
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (n : Nat)
+    (hBound : n ≤ 7)
+    (hBlocks :
+      ∀ fn,
+        irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+          some fn →
+        fn.body = List.replicate n (Yul.YulStmt.block [])) :
+    NativeGeneratedSelectedUserBodyResultBridgeAtFuel irContract tx state
+      observableSlots :=
+  NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_exec_only_and_preserves
+    irContract tx state observableSlots
+    (NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_block_empty_replicate_le_seven
+      irContract tx state observableSlots n hBound hBlocks)
+    (NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuelRevived.of_block_empty_replicate
+      irContract tx n hBlocks)
+
 /-- Singleton-comment selected user bodies discharge the unified selected-body
 result boundary. -/
 theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_singleton_comment
@@ -26164,6 +26498,15 @@ inductive NativeGeneratedSelectedUserBodySimpleShape
               (fun fn => fn.selector == tx.functionSelector) =
             some fn →
           fn.body = [.block [], .block []])
+  | emptyBlockPrefix
+      (n : Nat)
+      (hBound : n ≤ 7)
+      (hBody :
+        ∀ fn,
+          irContract.functions.find?
+              (fun fn => fn.selector == tx.functionSelector) =
+            some fn →
+          fn.body = List.replicate n (Yul.YulStmt.block []))
   | singletonComment
       (hBody :
         ∀ fn,
@@ -26207,6 +26550,9 @@ inductive NativeGeneratedSelectedUserBodySimpleBody :
       NativeGeneratedSelectedUserBodySimpleBody [.block []]
   | labelBlockEmpty :
       NativeGeneratedSelectedUserBodySimpleBody [.block [], .block []]
+  | emptyBlockPrefix (n : Nat) (hBound : n ≤ 7) :
+      NativeGeneratedSelectedUserBodySimpleBody
+        (List.replicate n (Yul.YulStmt.block []))
   | singletonComment (text : String) :
       NativeGeneratedSelectedUserBodySimpleBody [.comment text]
   | blockLeave :
@@ -26227,6 +26573,11 @@ def checked? : List Yul.YulStmt → Bool
   | [.leave] => true
   | [.block []] => true
   | [.block [], .block []] => true
+  | [.block [], .block [], .block []] => true
+  | [.block [], .block [], .block [], .block []] => true
+  | [.block [], .block [], .block [], .block [], .block []] => true
+  | [.block [], .block [], .block [], .block [], .block [], .block []] => true
+  | [.block [], .block [], .block [], .block [], .block [], .block [], .block []] => true
   | [.comment _] => true
   | [.block [.leave]] => true
   | [.block [], .leave] => true
@@ -26243,6 +26594,11 @@ theorem of_checked? (body : List Yul.YulStmt)
   · exact leaveBody
   · exact blockEmpty
   · exact labelBlockEmpty
+  · exact emptyBlockPrefix 3 (by omega)
+  · exact emptyBlockPrefix 4 (by omega)
+  · exact emptyBlockPrefix 5 (by omega)
+  · exact emptyBlockPrefix 6 (by omega)
+  · exact emptyBlockPrefix 7 (by omega)
   · exact singletonComment _
   · exact blockLeave
   · exact labelLeave
@@ -26326,6 +26682,15 @@ theorem of_checked?
                     rw [hFind] at hFn
                     cases hFn
                     rfl)
+          | emptyBlockPrefix n hBound =>
+              exact
+                NativeGeneratedSelectedUserBodySimpleShape.emptyBlockPrefix
+                  n hBound
+                  (by
+                    intro fn hFn
+                    rw [hFind] at hFn
+                    cases hFn
+                    rfl)
           | singletonComment text =>
               exact
                 NativeGeneratedSelectedUserBodySimpleShape.singletonComment
@@ -26392,6 +26757,10 @@ theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_simple_shape
       exact
         NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_block_empty_with_label_prefix
           irContract tx state observableSlots hBody
+  | emptyBlockPrefix n hBound hBody =>
+      exact
+        NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_block_empty_replicate_le_seven
+          irContract tx state observableSlots n hBound hBody
   | singletonComment hBody =>
       exact
         NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_singleton_comment
