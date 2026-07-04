@@ -24284,8 +24284,312 @@ private theorem nativeResultsMatchOn_execIRFunction_three_let_lit_body_markedPre
       EvmYul.Yul.State.insert] using
         (Compiler.Proofs.YulGeneration.Backends.Native.projectLogsFromState_initialState
           nativeContract (YulTransaction.ofIR tx) state.storage
+        (Compiler.Proofs.YulGeneration.Backends.Native.materializedStorageSlots
+          (Compiler.runtimeCode irContract) observableSlots))
+
+/- Structural representation of source literal-`let` bindings. This is the
+unbounded body-local spine that the checked bounded cases will eventually
+lower through once the selected-body fuel theorem is generalized. -/
+namespace NativeGeneratedSelectedUserBodyLiteralLetBindings
+
+def toBody : List (String × Nat) → List Yul.YulStmt
+  | [] => []
+  | (target, assigned) :: rest =>
+      .let_ target (.lit assigned) :: toBody rest
+
+def toNativeBody : List (String × Nat) → List EvmYul.Yul.Ast.Stmt
+  | [] => []
+  | (target, assigned) :: rest =>
+      .Let [target]
+        (some
+          (Compiler.Proofs.YulGeneration.Backends.lowerExprNative
+            (Yul.YulExpr.lit assigned))) :: toNativeBody rest
+
+def applyNative :
+    EvmYul.Yul.State → List (String × Nat) → EvmYul.Yul.State
+  | state, [] => state
+  | state, (target, assigned) :: rest =>
+      applyNative
+        (state.insert target (EvmYul.UInt256.ofNat assigned)) rest
+
+def revivedNative
+    (state : EvmYul.Yul.State)
+    (bindings : List (String × Nat)) : EvmYul.Yul.State :=
+  (applyNative state bindings).reviveJump
+
+@[simp] theorem toBody_length (bindings : List (String × Nat)) :
+    (toBody bindings).length = bindings.length := by
+  induction bindings with
+  | nil =>
+      rfl
+  | cons binding rest ih =>
+      cases binding
+      simp [toBody, ih]
+
+@[simp] theorem toNativeBody_length (bindings : List (String × Nat)) :
+    (toNativeBody bindings).length = bindings.length := by
+  induction bindings with
+  | nil =>
+      rfl
+  | cons binding rest ih =>
+      cases binding
+      simp [toNativeBody, ih]
+
+private theorem execIRStmts_continue
+    (fuel : Nat)
+    (state : IRState)
+    (bindings : List (String × Nat))
+    (hFuel : bindings.length + 1 ≤ fuel) :
+    execIRStmts fuel state (toBody bindings) =
+      .continue (state.setVars bindings) := by
+  induction bindings generalizing fuel state with
+  | nil =>
+      simp [toBody, execIRStmts, IRState.setVars]
+  | cons binding rest ih =>
+      rcases binding with ⟨target, assigned⟩
+      cases fuel with
+      | zero =>
+          simp at hFuel
+      | succ fuel1 =>
+          cases fuel1 with
+          | zero =>
+              simp at hFuel
+          | succ fuel2 =>
+              have hRestFuel : rest.length + 1 ≤ Nat.succ fuel2 := by
+                simp at hFuel
+                omega
+              simp [toBody, execIRStmts, execIRStmt, evalIRExpr,
+                IRState.setVars]
+              exact ih (Nat.succ fuel2) (state.setVar target assigned)
+                hRestFuel
+
+private theorem execIRFunction_extract_eq
+    (fn : IRFunction)
+    (tx : IRTransaction)
+    (state : IRState)
+    (bindings : List (String × Nat))
+    (hBody : fn.body = toBody bindings) :
+    execIRFunction fn tx.args (applyIRTransactionContext tx state) =
+      { success := true
+        returnValue := none
+        finalStorage := state.storage
+        finalMappings := Compiler.Proofs.storageAsMappings state.storage
+        events := state.events } := by
+  rw [execIRFunction]
+  rw [hBody]
+  rw [execIRStmts_continue]
+  · simp [applyIRTransactionContext]
+  · have hSize := sizeOf_list_ge_length (xs := toBody bindings)
+    simp at hSize
+    omega
+
+private theorem projectStorageFromState_insert_eq
+    (tx : YulTransaction)
+    (state : EvmYul.Yul.State)
+    (target : String)
+    (assigned : EvmYul.UInt256) :
+    Compiler.Proofs.YulGeneration.Backends.Native.projectStorageFromState tx
+        (state.insert target assigned) =
+      Compiler.Proofs.YulGeneration.Backends.Native.projectStorageFromState tx
+        state := by
+  funext slot
+  cases state <;>
+    simp [Compiler.Proofs.YulGeneration.Backends.Native.projectStorageFromState,
+      EvmYul.Yul.State.insert, EvmYul.Yul.State.sharedState]
+
+private theorem projectLogsFromState_insert_eq
+    (state : EvmYul.Yul.State)
+    (target : String)
+    (assigned : EvmYul.UInt256) :
+    Compiler.Proofs.YulGeneration.Backends.Native.projectLogsFromState
+        (state.insert target assigned) =
+      Compiler.Proofs.YulGeneration.Backends.Native.projectLogsFromState
+        state := by
+  cases state <;>
+    simp [Compiler.Proofs.YulGeneration.Backends.Native.projectLogsFromState,
+      EvmYul.Yul.State.insert, EvmYul.Yul.State.sharedState]
+
+private theorem projectStorageFromState_applyNative_eq
+    (tx : YulTransaction)
+    (state : EvmYul.Yul.State)
+    (bindings : List (String × Nat)) :
+    Compiler.Proofs.YulGeneration.Backends.Native.projectStorageFromState tx
+        (applyNative state bindings) =
+      Compiler.Proofs.YulGeneration.Backends.Native.projectStorageFromState tx
+        state := by
+  induction bindings generalizing state with
+  | nil =>
+      rfl
+  | cons binding rest ih =>
+      rcases binding with ⟨target, assigned⟩
+      rw [applyNative]
+      trans
+        Compiler.Proofs.YulGeneration.Backends.Native.projectStorageFromState tx
+          (state.insert target (EvmYul.UInt256.ofNat assigned))
+      · exact ih (state.insert target (EvmYul.UInt256.ofNat assigned))
+      · exact projectStorageFromState_insert_eq tx state target
+          (EvmYul.UInt256.ofNat assigned)
+
+private theorem projectLogsFromState_applyNative_eq
+    (state : EvmYul.Yul.State)
+    (bindings : List (String × Nat)) :
+    Compiler.Proofs.YulGeneration.Backends.Native.projectLogsFromState
+        (applyNative state bindings) =
+      Compiler.Proofs.YulGeneration.Backends.Native.projectLogsFromState
+        state := by
+  induction bindings generalizing state with
+  | nil =>
+      rfl
+  | cons binding rest ih =>
+      rcases binding with ⟨target, assigned⟩
+      rw [applyNative]
+      trans
+        Compiler.Proofs.YulGeneration.Backends.Native.projectLogsFromState
+          (state.insert target (EvmYul.UInt256.ofNat assigned))
+      · exact ih (state.insert target (EvmYul.UInt256.ofNat assigned))
+      · exact projectLogsFromState_insert_eq state target
+          (EvmYul.UInt256.ofNat assigned)
+
+private theorem applyNative_ok_of_ok
+    (shared : EvmYul.SharedState EvmYul.OperationType.Yul)
+    (store : EvmYul.Yul.VarStore)
+    (bindings : List (String × Nat)) :
+    ∃ store',
+      applyNative (EvmYul.Yul.State.Ok shared store) bindings =
+        EvmYul.Yul.State.Ok shared store' := by
+  induction bindings generalizing store with
+  | nil =>
+      exact ⟨store, rfl⟩
+  | cons binding rest ih =>
+      rcases binding with ⟨target, assigned⟩
+      simp [applyNative, EvmYul.Yul.State.insert]
+      exact ih ((store.insert target (EvmYul.UInt256.ofNat assigned)))
+
+private theorem projectResult_ok_applyNative_reviveJump_eq
+    (tx : YulTransaction)
+    (initialStorage : IRStorageSlot → IRStorageWord)
+    (initialEvents : List (List Nat))
+    (state : EvmYul.Yul.State)
+    (bindings : List (String × Nat))
+    (values : List EvmYul.Yul.Ast.Literal)
+    (hStateOk : ∃ shared store, state = EvmYul.Yul.State.Ok shared store) :
+    Compiler.Proofs.YulGeneration.Backends.Native.projectResult tx
+        initialStorage initialEvents
+        (.ok (revivedNative state bindings, values)) =
+      Compiler.Proofs.YulGeneration.Backends.Native.projectResult tx
+        initialStorage initialEvents (.ok (state, values)) := by
+  rcases hStateOk with ⟨shared, store, rfl⟩
+  have hStorage :=
+    projectStorageFromState_applyNative_eq tx
+      (EvmYul.Yul.State.Ok shared store) bindings
+  have hLogs :=
+    projectLogsFromState_applyNative_eq
+      (EvmYul.Yul.State.Ok shared store) bindings
+  rcases applyNative_ok_of_ok shared store bindings with
+    ⟨store', hApplied⟩
+  unfold revivedNative
+  rw [hApplied] at hStorage hLogs ⊢
+  simpa [Compiler.Proofs.YulGeneration.Backends.Native.projectResult,
+    EvmYul.Yul.State.reviveJump, hStorage, hLogs]
+
+private theorem nativeResultsMatchOn_execIRFunction_body_markedPrefix
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (nativeContract : EvmYul.Yul.Ast.YulContract)
+    (fn : IRFunction)
+    (switchId : Nat)
+    (store : EvmYul.Yul.VarStore)
+    (bindings : List (String × Nat))
+    (hBody : fn.body = toBody bindings) :
+    nativeResultsMatchOn observableSlots
+      (execIRFunction fn tx.args (applyIRTransactionContext tx state))
+      (.ok
+        (Compiler.Proofs.YulGeneration.Backends.Native.projectResult
+          (YulTransaction.ofIR tx) state.storage state.events
+          (.ok
+            ((revivedNative
+              (Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId
+                nativeContract (YulTransaction.ofIR tx) state.storage
+                (Compiler.Proofs.YulGeneration.Backends.Native.materializedStorageSlots
+                  (Compiler.runtimeCode irContract) observableSlots)
+                switchId store)
+              bindings), [])))) := by
+  let entry :=
+    Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId
+      nativeContract (YulTransaction.ofIR tx) state.storage
+      (Compiler.Proofs.YulGeneration.Backends.Native.materializedStorageSlots
+        (Compiler.runtimeCode irContract) observableSlots)
+      switchId store
+  have hEntryOk :
+      ∃ shared store, entry = EvmYul.Yul.State.Ok shared store := by
+    simp [entry,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStorePrefixStateForId,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryState,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemorySharedState,
+      EvmYul.Yul.State.insert]
+  have hProject :
+      Compiler.Proofs.YulGeneration.Backends.Native.projectResult
+          (YulTransaction.ofIR tx) state.storage state.events
+          (.ok ((revivedNative entry bindings), [])) =
+        Compiler.Proofs.YulGeneration.Backends.Native.projectResult
+          (YulTransaction.ofIR tx) state.storage state.events
+          (.ok (entry, [])) :=
+    projectResult_ok_applyNative_reviveJump_eq
+      (YulTransaction.ofIR tx) state.storage state.events entry bindings []
+      hEntryOk
+  simp only [nativeResultsMatchOn,
+    Compiler.Proofs.YulGeneration.Backends.Native.nativeResultsMatchOn]
+  rw [execIRFunction_extract_eq fn tx state bindings hBody]
+  change
+    Compiler.Proofs.YulGeneration.Backends.Native.nativeResultsMatchOn
+      observableSlots
+      { success := true
+        returnValue := none
+        finalStorage := state.storage
+        finalMappings := Compiler.Proofs.storageAsMappings state.storage
+        events := state.events }
+      (.ok
+        (Compiler.Proofs.YulGeneration.Backends.Native.projectResult
+          (YulTransaction.ofIR tx) state.storage state.events
+          (.ok ((revivedNative entry bindings), []))))
+  rw [hProject]
+  simp only [Compiler.Proofs.YulGeneration.Backends.Native.nativeResultsMatchOn]
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · simp [Compiler.Proofs.YulGeneration.Backends.Native.projectResult, entry,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStorePrefixStateForId,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryState,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemorySharedState,
+      EvmYul.Yul.State.insert]
+  · simp [Compiler.Proofs.YulGeneration.Backends.Native.projectResult, entry,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStorePrefixStateForId,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryState,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemorySharedState,
+      EvmYul.Yul.State.insert]
+  · intro slot hSlot
+    simpa [Compiler.Proofs.YulGeneration.Backends.Native.projectResult,
+      entry] using
+      (Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId_materializedStorageSlot
+        nativeContract (YulTransaction.ofIR tx) state.storage
+        (Compiler.Proofs.YulGeneration.Backends.Native.materializedStorageSlots
+          (Compiler.runtimeCode irContract) observableSlots)
+        switchId store slot
+        (Compiler.Proofs.YulGeneration.Backends.Native.observableSlot_mem_materializedStorageSlots
+          (Compiler.runtimeCode irContract) observableSlots slot hSlot)).symm
+  · simpa [Compiler.Proofs.YulGeneration.Backends.Native.projectResult, entry,
+      Compiler.Proofs.YulGeneration.Backends.Native.projectLogsFromState]
+      using
+        (Compiler.Proofs.YulGeneration.Backends.Native.projectLogsFromState_nativeSwitchStoreMarkedPrefixStateForId
+          nativeContract (YulTransaction.ofIR tx) state.storage
           (Compiler.Proofs.YulGeneration.Backends.Native.materializedStorageSlots
-            (Compiler.runtimeCode irContract) observableSlots))
+            (Compiler.runtimeCode irContract) observableSlots)
+          switchId store)
+
+end NativeGeneratedSelectedUserBodyLiteralLetBindings
 
 /-- Build the direct selected-user-body ExecBridge for singleton literal `let`
 bodies whose target is fresh for the generated dispatcher prefix. -/
