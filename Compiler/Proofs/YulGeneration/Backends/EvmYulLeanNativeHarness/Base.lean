@@ -4332,6 +4332,38 @@ private theorem state_restrictStoreTo_self_of_reviveJump_eq
       cases jump <;>
         simp [EvmYul.Yul.State.reviveJump, EvmYul.Yul.State.revive] at hScoped
 
+private theorem state_insert_reviveJump_eq_of_scoped
+    (state : EvmYul.Yul.State)
+    (name : EvmYul.Identifier)
+    (value : EvmYul.Literal)
+    (hScoped : state.reviveJump = state) :
+    (state.insert name value).reviveJump = state.insert name value := by
+  cases state with
+  | Ok shared store =>
+      simp [EvmYul.Yul.State.insert, EvmYul.Yul.State.reviveJump]
+  | OutOfFuel =>
+      simp [EvmYul.Yul.State.insert, EvmYul.Yul.State.reviveJump]
+  | Checkpoint jump =>
+      cases jump <;>
+        simp [EvmYul.Yul.State.reviveJump, EvmYul.Yul.State.revive] at hScoped
+
+private theorem state_multifill_singleton_reviveJump_eq_of_scoped
+    (state : EvmYul.Yul.State)
+    (name : EvmYul.Identifier)
+    (value : EvmYul.Literal)
+    (hScoped : state.reviveJump = state) :
+    (EvmYul.Yul.State.multifill [name] [value] state).reviveJump =
+      EvmYul.Yul.State.multifill [name] [value] state := by
+  cases state with
+  | Ok shared store =>
+      simp [EvmYul.Yul.State.multifill, EvmYul.Yul.State.insert,
+        EvmYul.Yul.State.reviveJump]
+  | OutOfFuel =>
+      simp [EvmYul.Yul.State.multifill, EvmYul.Yul.State.reviveJump]
+  | Checkpoint jump =>
+      cases jump <;>
+        simp [EvmYul.Yul.State.reviveJump, EvmYul.Yul.State.revive] at hScoped
+
 theorem ok_restrictStoreTo_self
     (shared : EvmYul.SharedState EvmYul.OperationType.Yul)
     (store : EvmYul.Yul.VarStore) :
@@ -11235,6 +11267,213 @@ theorem NativeStmtPreservesLookup_revived_empty_block
     NativeStmtPreservesLookup_revived_block name value [] codeOverride
       (NativeBlockPreservesLookup_revived_of_seq name value [] codeOverride
         (NativeSeqPreservesLookup_revived_nil name value codeOverride))
+
+/-- Revived word preservation for a literal `let` that writes a different
+variable. A successful native `Let` endpoint is still a scoped state, so the
+ordinary no-clobbering store argument can be read through `reviveJump`. -/
+theorem NativeStmtPreservesWord_revived_let_lit_of_ne
+    (name target : EvmYul.Identifier)
+    (expected assigned : EvmYul.Literal)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (hne : name ≠ target) :
+    NativeStmtPreservesWord_revived name expected
+      (.Let [target] (some (.Lit assigned))) codeOverride := by
+  intro fuel state final hScoped hLookup hExec
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.exec] at hExec
+  | succ fuel' =>
+      cases hCheck : EvmYul.Yul.checkDeclaration state [target] with
+      | error err =>
+          simp [EvmYul.Yul.exec, hCheck] at hExec
+      | ok checked =>
+          cases fuel' with
+          | zero =>
+              simp [EvmYul.Yul.exec, EvmYul.Yul.evalValues,
+                EvmYul.Yul.multifill', hCheck] at hExec
+          | succ evalFuel =>
+              simp [EvmYul.Yul.exec, EvmYul.Yul.evalValues,
+                EvmYul.Yul.multifill', hCheck] at hExec
+              cases hExec
+              have hFinalScoped :
+                  (EvmYul.Yul.State.multifill [target] [assigned] state).reviveJump =
+                    EvmYul.Yul.State.multifill [target] [assigned] state :=
+                state_multifill_singleton_reviveJump_eq_of_scoped state target
+                  assigned hScoped
+              rw [hFinalScoped]
+              exact
+                (state_getElem_multifill_of_not_mem state name [target]
+                    [assigned] (by simpa using hne)).trans
+                  (by simpa [hScoped] using hLookup)
+
+/-- Revived lookup preservation for a literal `let` that writes a different
+variable. This is the lookup-form companion needed for discriminator
+bookkeeping in selected-body proofs. -/
+theorem NativeStmtPreservesLookup_revived_let_lit_of_ne
+    (name target : EvmYul.Identifier)
+    (expected assigned : EvmYul.Literal)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (hne : name ≠ target) :
+    NativeStmtPreservesLookup_revived name expected
+      (.Let [target] (some (.Lit assigned))) codeOverride := by
+  intro fuel state final hScoped hLookup hExec
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.exec] at hExec
+  | succ fuel' =>
+      cases hCheck : EvmYul.Yul.checkDeclaration state [target] with
+      | error err =>
+          simp [EvmYul.Yul.exec, hCheck] at hExec
+      | ok checked =>
+          cases fuel' with
+          | zero =>
+              simp [EvmYul.Yul.exec, EvmYul.Yul.evalValues,
+                EvmYul.Yul.multifill', hCheck] at hExec
+          | succ evalFuel =>
+              simp [EvmYul.Yul.exec, EvmYul.Yul.evalValues,
+                EvmYul.Yul.multifill', hCheck] at hExec
+              cases hExec
+              rw [state_lookup?_reviveJump_eq]
+              rw [state_lookup?_multifill_of_not_mem state name [target]
+                [assigned] (by simpa using hne)]
+              rw [← state_lookup?_reviveJump_eq state name]
+              exact hLookup
+
+theorem NativeStmtPreservesWord_revived_lowerStmtGroupNativeWithSwitchIds_let_lit_of_write_not_mem
+    (name : EvmYul.Identifier)
+    (expected : EvmYul.Literal)
+    (reservedNames : List String)
+    (nextSwitchId : Nat)
+    (target : EvmYul.Identifier)
+    (assigned : Nat)
+    (native : List EvmYul.Yul.Ast.Stmt)
+    (finalSwitchId : Nat)
+    (nativeStmt : EvmYul.Yul.Ast.Stmt)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (hLower :
+      Backends.lowerStmtGroupNativeWithSwitchIds reservedNames nextSwitchId
+        (.let_ target (.lit assigned)) = .ok (native, finalSwitchId))
+    (hMem : nativeStmt ∈ native)
+    (hFresh : name ∉ Backends.nativeStmtWriteNames nativeStmt) :
+    NativeStmtPreservesWord_revived name expected nativeStmt codeOverride := by
+  rw [Backends.lowerStmtGroupNativeWithSwitchIds_let] at hLower
+  cases hLower
+  simp at hMem
+  subst nativeStmt
+  simpa [Backends.lowerExprNative] using
+    NativeStmtPreservesWord_revived_let_lit_of_ne name target expected
+      (EvmYul.UInt256.ofNat assigned) codeOverride
+      (nativeStmtWriteNames_let_singleton_not_mem_ne name target
+        (some (Backends.lowerExprNative (.lit assigned))) hFresh)
+
+theorem NativeStmtPreservesLookup_revived_lowerStmtGroupNativeWithSwitchIds_let_lit_of_write_not_mem
+    (name : EvmYul.Identifier)
+    (expected : EvmYul.Literal)
+    (reservedNames : List String)
+    (nextSwitchId : Nat)
+    (target : EvmYul.Identifier)
+    (assigned : Nat)
+    (native : List EvmYul.Yul.Ast.Stmt)
+    (finalSwitchId : Nat)
+    (nativeStmt : EvmYul.Yul.Ast.Stmt)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (hLower :
+      Backends.lowerStmtGroupNativeWithSwitchIds reservedNames nextSwitchId
+        (.let_ target (.lit assigned)) = .ok (native, finalSwitchId))
+    (hMem : nativeStmt ∈ native)
+    (hFresh : name ∉ Backends.nativeStmtWriteNames nativeStmt) :
+    NativeStmtPreservesLookup_revived name expected nativeStmt codeOverride := by
+  rw [Backends.lowerStmtGroupNativeWithSwitchIds_let] at hLower
+  cases hLower
+  simp at hMem
+  subst nativeStmt
+  simpa [Backends.lowerExprNative] using
+    NativeStmtPreservesLookup_revived_let_lit_of_ne name target expected
+      (EvmYul.UInt256.ofNat assigned) codeOverride
+      (nativeStmtWriteNames_let_singleton_not_mem_ne name target
+        (some (Backends.lowerExprNative (.lit assigned))) hFresh)
+
+theorem NativeSeqPreservesWord_revived_lowerStmtsNativeWithSwitchIds_singleton_let_lit
+    (name : EvmYul.Identifier)
+    (expected : EvmYul.Literal)
+    (reservedNames : List String)
+    (nextSwitchId : Nat)
+    (target : EvmYul.Identifier)
+    (assigned : Nat)
+    (native : List EvmYul.Yul.Ast.Stmt)
+    (finalSwitchId : Nat)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (hLower :
+      Backends.lowerStmtsNativeWithSwitchIds reservedNames nextSwitchId
+        [.let_ target (.lit assigned)] = .ok (native, finalSwitchId))
+    (hFresh : name ∉ Backends.nativeStmtsWriteNames native) :
+    NativeSeqPreservesWord_revived name expected native codeOverride := by
+  simp [Backends.lowerStmtsNativeWithSwitchIds_cons,
+    Backends.lowerStmtGroupNativeWithSwitchIds_let,
+    Backends.lowerStmtsNativeWithSwitchIds_nil, Bind.bind, Except.bind,
+    Pure.pure, Except.pure, List.append_nil] at hLower
+  rcases hLower with ⟨hNative, hFinal⟩
+  subst hNative
+  subst hFinal
+  have hStmtFresh :
+      name ∉ Backends.nativeStmtWriteNames
+        (.Let [target] (some (Backends.lowerExprNative (.lit assigned)))) :=
+    nativeStmtsWriteNames_head_not_mem_of_cons_not_mem name
+      (.Let [target] (some (Backends.lowerExprNative (.lit assigned)))) []
+      hFresh
+  refine
+    NativeSeqPreservesWord_revived_cons name expected
+      (.Let [target] (some (Backends.lowerExprNative (.lit assigned)))) []
+      codeOverride ?_
+      (NativeSeqPreservesWord_revived_nil name expected codeOverride)
+  exact
+    NativeStmtPreservesWord_revived_lowerStmtGroupNativeWithSwitchIds_let_lit_of_write_not_mem
+      name expected reservedNames nextSwitchId target assigned
+      [.Let [target] (some (Backends.lowerExprNative (.lit assigned)))]
+      nextSwitchId (.Let [target] (some (Backends.lowerExprNative (.lit assigned))))
+      codeOverride (by simp [Backends.lowerStmtGroupNativeWithSwitchIds_let])
+      (by simp) hStmtFresh
+
+theorem NativeSeqPreservesLookup_revived_lowerStmtsNativeWithSwitchIds_singleton_let_lit
+    (name : EvmYul.Identifier)
+    (expected : EvmYul.Literal)
+    (reservedNames : List String)
+    (nextSwitchId : Nat)
+    (target : EvmYul.Identifier)
+    (assigned : Nat)
+    (native : List EvmYul.Yul.Ast.Stmt)
+    (finalSwitchId : Nat)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (hLower :
+      Backends.lowerStmtsNativeWithSwitchIds reservedNames nextSwitchId
+        [.let_ target (.lit assigned)] = .ok (native, finalSwitchId))
+    (hFresh : name ∉ Backends.nativeStmtsWriteNames native) :
+    NativeSeqPreservesLookup_revived name expected native codeOverride := by
+  simp [Backends.lowerStmtsNativeWithSwitchIds_cons,
+    Backends.lowerStmtGroupNativeWithSwitchIds_let,
+    Backends.lowerStmtsNativeWithSwitchIds_nil, Bind.bind, Except.bind,
+    Pure.pure, Except.pure, List.append_nil] at hLower
+  rcases hLower with ⟨hNative, hFinal⟩
+  subst hNative
+  subst hFinal
+  have hStmtFresh :
+      name ∉ Backends.nativeStmtWriteNames
+        (.Let [target] (some (Backends.lowerExprNative (.lit assigned)))) :=
+    nativeStmtsWriteNames_head_not_mem_of_cons_not_mem name
+      (.Let [target] (some (Backends.lowerExprNative (.lit assigned)))) []
+      hFresh
+  refine
+    NativeSeqPreservesLookup_revived_cons name expected
+      (.Let [target] (some (Backends.lowerExprNative (.lit assigned)))) []
+      codeOverride ?_
+      (NativeSeqPreservesLookup_revived_nil name expected codeOverride)
+  exact
+    NativeStmtPreservesLookup_revived_lowerStmtGroupNativeWithSwitchIds_let_lit_of_write_not_mem
+      name expected reservedNames nextSwitchId target assigned
+      [.Let [target] (some (Backends.lowerExprNative (.lit assigned)))]
+      nextSwitchId (.Let [target] (some (Backends.lowerExprNative (.lit assigned))))
+      codeOverride (by simp [Backends.lowerStmtGroupNativeWithSwitchIds_let])
+      (by simp) hStmtFresh
 
 /-- `_revived` form for the `.Block [.Leave]` shape produced by E4's
 lowering of an IR `[.block [.leave]]` body. Composes the `_revived` block

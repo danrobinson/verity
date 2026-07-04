@@ -25937,6 +25937,109 @@ private theorem NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuelRevived.o
               reservedNames n0))
           (EvmYul.UInt256.ofNat tx.functionSelector) (some nativeContract))
 
+/-- Singleton literal `let` selected user bodies preserve the generated selector
+bookkeeping in the revived form, provided the user target cannot collide with
+the generated switch temporaries.
+
+This is a first non-no-op straight-statement preservation constructor. It does
+not yet prove source/native execution equivalence for `let`; it supplies the
+dispatcher-local preservation half needed by the future generic selected-body
+simulation. -/
+private theorem NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuelRevived.of_singleton_let_lit
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (hLetLit :
+      ∀ fn,
+        irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+          some fn →
+        ∃ target assigned,
+          fn.body = [.let_ target (.lit assigned)] ∧
+          ∀ reservedNames n0,
+            target ≠
+              Compiler.Proofs.YulGeneration.Backends.nativeSwitchMatchedTempName
+                (Compiler.Proofs.YulGeneration.Backends.freshNativeSwitchId
+                  reservedNames n0) ∧
+            target ≠
+              Compiler.Proofs.YulGeneration.Backends.nativeSwitchDiscrTempName
+                (Compiler.Proofs.YulGeneration.Backends.freshNativeSwitchId
+                  reservedNames n0)) :
+    NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuelRevived irContract tx := by
+  intro nativeContract fn reservedNames n0 cases' body' bodyNative bodyStart
+    bodyEnd userBodyStart _hLowerRuntime hFind _hCase _hBodyLower
+    hUserBodyLower _pre _suffix _hCases
+  obtain ⟨target, assigned, hBody, hFreshTemps⟩ := hLetLit fn hFind
+  have hUserLower := hUserBodyLower
+  rw [hBody] at hUserLower
+  simp [Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds_cons,
+    Compiler.Proofs.YulGeneration.Backends.lowerStmtGroupNativeWithSwitchIds_let,
+    Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds_nil,
+    Bind.bind, Except.bind, Pure.pure, Except.pure, List.append_nil]
+    at hUserLower
+  rcases hUserLower with ⟨hNative, hEnd⟩
+  subst bodyNative
+  subst bodyEnd
+  let switchId :=
+    Compiler.Proofs.YulGeneration.Backends.freshNativeSwitchId reservedNames n0
+  let matchedName :=
+    Compiler.Proofs.YulGeneration.Backends.nativeSwitchMatchedTempName switchId
+  let discrName :=
+    Compiler.Proofs.YulGeneration.Backends.nativeSwitchDiscrTempName switchId
+  have hTargetNeMatched : matchedName ≠ target := by
+    exact Ne.symm (hFreshTemps reservedNames n0).1
+  have hTargetNeDiscr : discrName ≠ target := by
+    exact Ne.symm (hFreshTemps reservedNames n0).2
+  have hMatchedFresh :
+      matchedName ∉
+        Compiler.Proofs.YulGeneration.Backends.nativeStmtsWriteNames
+          [EvmYul.Yul.Ast.Stmt.Let [target]
+            (some
+              (Compiler.Proofs.YulGeneration.Backends.lowerExprNative
+                (Yul.YulExpr.lit assigned)))] := by
+    simp [Compiler.Proofs.YulGeneration.Backends.nativeStmtsWriteNames,
+      Compiler.Proofs.YulGeneration.Backends.nativeStmtWriteNames,
+      hTargetNeMatched]
+  have hDiscrFresh :
+      discrName ∉
+        Compiler.Proofs.YulGeneration.Backends.nativeStmtsWriteNames
+          [EvmYul.Yul.Ast.Stmt.Let [target]
+            (some
+              (Compiler.Proofs.YulGeneration.Backends.lowerExprNative
+                (Yul.YulExpr.lit assigned)))] := by
+    simp [Compiler.Proofs.YulGeneration.Backends.nativeStmtsWriteNames,
+      Compiler.Proofs.YulGeneration.Backends.nativeStmtWriteNames,
+      hTargetNeDiscr]
+  refine ⟨?_, ?_⟩
+  · simpa [switchId, matchedName] using
+      Compiler.Proofs.YulGeneration.Backends.Native.NativeSeqPreservesWord_revived_lowerStmtsNativeWithSwitchIds_singleton_let_lit
+        matchedName (EvmYul.UInt256.ofNat 1) reservedNames userBodyStart
+        target assigned
+        [EvmYul.Yul.Ast.Stmt.Let [target]
+          (some
+            (Compiler.Proofs.YulGeneration.Backends.lowerExprNative
+              (Yul.YulExpr.lit assigned)))]
+        userBodyStart (some nativeContract)
+        (by
+          simp [Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds_cons,
+            Compiler.Proofs.YulGeneration.Backends.lowerStmtGroupNativeWithSwitchIds_let,
+            Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds_nil,
+            Bind.bind, Except.bind, Pure.pure, Except.pure, List.append_nil])
+        hMatchedFresh
+  · simpa [switchId, discrName] using
+      Compiler.Proofs.YulGeneration.Backends.Native.NativeSeqPreservesLookup_revived_lowerStmtsNativeWithSwitchIds_singleton_let_lit
+        discrName (EvmYul.UInt256.ofNat tx.functionSelector) reservedNames
+        userBodyStart target assigned
+        [EvmYul.Yul.Ast.Stmt.Let [target]
+          (some
+            (Compiler.Proofs.YulGeneration.Backends.lowerExprNative
+              (Yul.YulExpr.lit assigned)))]
+        userBodyStart (some nativeContract)
+        (by
+          simp [Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds_cons,
+            Compiler.Proofs.YulGeneration.Backends.lowerStmtGroupNativeWithSwitchIds_let,
+            Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds_nil,
+            Bind.bind, Except.bind, Pure.pure, Except.pure, List.append_nil])
+        hDiscrFresh
+
 /-- `_revived` mirror of `of_bridgedStraightStmts_falling_through` Preserves
 bridge (degenerate `preStmts = []` case). Reduces to the revived empty-body
 constructor. -/
