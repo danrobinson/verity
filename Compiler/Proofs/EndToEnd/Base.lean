@@ -26335,19 +26335,19 @@ theorem execSeq_toNativeBody_ok_of_targetsFreshFrom
                     omega
                   rw [hSeqFuel]
                   change
-                    EvmYul.Yul.execSeq (Nat.succ (fuelRest + 2))
-                        (stmt :: toNativeBody rest) codeOverride
-                        (EvmYul.Yul.State.Ok shared store) =
-                      .ok
-                        (applyNative (EvmYul.Yul.State.Ok shared store)
-                          ((target, assigned) :: rest))
+                      EvmYul.Yul.execSeq (Nat.succ (fuelRest + 2))
+                          (stmt :: toNativeBody rest) codeOverride
+                          (EvmYul.Yul.State.Ok shared store) =
+                        .ok
+                          (applyNative (EvmYul.Yul.State.Ok shared store)
+                            ((target, assigned) :: rest))
                   rw [Compiler.Proofs.YulGeneration.Backends.Native.execSeq_cons_ok_eq
-                    (fuelRest + 2) stmt (toNativeBody rest) codeOverride
-                    (EvmYul.Yul.State.Ok shared store)
-                    ((EvmYul.Yul.State.Ok shared store).insert target
-                      (EvmYul.UInt256.ofNat assigned)) hHead]
+                      (fuelRest + 2) stmt (toNativeBody rest) codeOverride
+                      (EvmYul.Yul.State.Ok shared store)
+                      ((EvmYul.Yul.State.Ok shared store).insert target
+                        (EvmYul.UInt256.ofNat assigned)) hHead]
                   simpa [stmt, toNativeBody, applyNative,
-                    EvmYul.Yul.State.insert] using hTail
+                      EvmYul.Yul.State.insert] using hTail
 
 private theorem execIRStmts_continue
     (fuel : Nat)
@@ -27228,6 +27228,559 @@ private theorem nativeResultsMatchOn_execIRFunction_body_markedPrefix
 
 end NativeGeneratedSelectedUserBodyNoOpPrefixLiteralLetBindings
 
+namespace NativeGeneratedSelectedUserBodyLiteralLetBindingsLeave
+
+def toBody : List (String × Nat) → List Yul.YulStmt
+  | [] => [.leave]
+  | (target, assigned) :: rest =>
+      .let_ target (.lit assigned) :: toBody rest
+
+def toNativeBody : List (String × Nat) → List EvmYul.Yul.Ast.Stmt
+  | [] => [.Leave]
+  | (target, assigned) :: rest =>
+      .Let [target]
+        (some
+          (Compiler.Proofs.YulGeneration.Backends.lowerExprNative
+            (Yul.YulExpr.lit assigned))) :: toNativeBody rest
+
+def ofBody? : List Yul.YulStmt → Option (List (String × Nat))
+  | [.leave] => some []
+  | .let_ target (.lit assigned) :: rest =>
+      match ofBody? rest with
+      | some bindings => some ((target, assigned) :: bindings)
+      | none => none
+  | _ => none
+
+def checkedUnbounded? (body : List Yul.YulStmt) : Bool :=
+  match ofBody? body with
+  | some bindings =>
+      NativeGeneratedSelectedUserBodyLiteralLetBindings.generatedPrefixFreshBindingsChecked?
+        bindings
+  | none => false
+
+def applyNative :
+    EvmYul.Yul.State → List (String × Nat) → EvmYul.Yul.State
+  | state, [] => state.setLeave
+  | state, (target, assigned) :: rest =>
+      applyNative
+        (state.insert target (EvmYul.UInt256.ofNat assigned)) rest
+
+def revivedNative
+    (state : EvmYul.Yul.State)
+    (bindings : List (String × Nat)) : EvmYul.Yul.State :=
+  (applyNative state bindings).reviveJump
+
+@[simp] theorem toBody_length (bindings : List (String × Nat)) :
+    (toBody bindings).length = bindings.length + 1 := by
+  induction bindings with
+  | nil =>
+      rfl
+  | cons binding rest ih =>
+      rcases binding with ⟨target, assigned⟩
+      simp [toBody, ih]
+
+@[simp] theorem toNativeBody_length (bindings : List (String × Nat)) :
+    (toNativeBody bindings).length = bindings.length + 1 := by
+  induction bindings with
+  | nil =>
+      rfl
+  | cons binding rest ih =>
+      rcases binding with ⟨target, assigned⟩
+      simp [toNativeBody, ih]
+
+@[simp] theorem ofBody?_toBody
+    (bindings : List (String × Nat)) :
+    ofBody? (toBody bindings) = some bindings := by
+  induction bindings with
+  | nil =>
+      rfl
+  | cons binding rest ih =>
+      rcases binding with ⟨target, assigned⟩
+      simp [toBody, ofBody?, ih]
+
+theorem ofBody?_eq_some_toBody
+    {body : List Yul.YulStmt}
+    {bindings : List (String × Nat)}
+    (hParse : ofBody? body = some bindings) :
+    body = toBody bindings := by
+  induction body generalizing bindings with
+  | nil =>
+      simp [ofBody?] at hParse
+  | cons stmt rest ih =>
+      cases stmt with
+      | comment text =>
+          simp [ofBody?] at hParse
+      | let_ target value =>
+          cases value <;> simp [ofBody?] at hParse
+          case lit assigned =>
+            by_cases hRestNil : rest = []
+            · subst rest
+              simp [ofBody?] at hParse
+            · cases hRest : ofBody? rest with
+              | none =>
+                  simp [hRest] at hParse
+              | some restBindings =>
+                  simp [hRest] at hParse
+                  cases hParse
+                  simp [toBody, ih hRest]
+      | letMany names value =>
+          simp [ofBody?] at hParse
+      | assign name value =>
+          simp [ofBody?] at hParse
+      | exprStmt e =>
+          simp [ofBody?] at hParse
+      | «leave» =>
+          cases rest with
+          | nil =>
+              simp [ofBody?] at hParse
+              cases hParse
+              rfl
+          | cons restHead restTail =>
+              simp [ofBody?] at hParse
+      | if_ cond thenBody =>
+          simp [ofBody?] at hParse
+      | for_ init cond post loopBody =>
+          simp [ofBody?] at hParse
+      | _ =>
+          simp [ofBody?] at hParse
+
+theorem checkedUnbounded?_eq_true
+    {body : List Yul.YulStmt}
+    (hCheck : checkedUnbounded? body = true) :
+    ∃ bindings : List (String × Nat),
+      body = toBody bindings ∧
+        NativeGeneratedSelectedUserBodyLiteralLetBindings.GeneratedPrefixFreshBindings
+          bindings := by
+  unfold checkedUnbounded? at hCheck
+  cases hParse : ofBody? body with
+  | none =>
+      simp [hParse] at hCheck
+  | some bindings =>
+      simp [hParse] at hCheck
+      exact
+        ⟨bindings, ofBody?_eq_some_toBody hParse,
+          NativeGeneratedSelectedUserBodyLiteralLetBindings.generatedPrefixFreshBindings_of_checked?
+            hCheck⟩
+
+theorem lowerStmtsNativeWithSwitchIds_toBody
+    (reservedNames : List String)
+    (start : Nat)
+    (bindings : List (String × Nat)) :
+    Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds
+        reservedNames start (toBody bindings) =
+      .ok (toNativeBody bindings, start) := by
+  induction bindings generalizing start with
+  | nil =>
+      simp [toBody, toNativeBody,
+        Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds_cons,
+        Compiler.Proofs.YulGeneration.Backends.lowerStmtGroupNativeWithSwitchIds_leave,
+        Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds_nil,
+        Bind.bind, Except.bind, Pure.pure, Except.pure]
+  | cons binding rest ih =>
+      rcases binding with ⟨target, assigned⟩
+      simp [toBody, toNativeBody,
+        Compiler.Proofs.YulGeneration.Backends.lowerStmtsNativeWithSwitchIds_cons,
+        Compiler.Proofs.YulGeneration.Backends.lowerStmtGroupNativeWithSwitchIds_let,
+        ih, Bind.bind, Except.bind, Pure.pure, Except.pure]
+
+theorem execIRStmts_continue
+    (fuel : Nat)
+    (state : IRState)
+    (bindings : List (String × Nat))
+    (hFuel : bindings.length + 2 ≤ fuel) :
+    execIRStmts fuel state (toBody bindings) =
+      .continue (state.setVars bindings) := by
+  induction bindings generalizing fuel state with
+  | nil =>
+      cases fuel with
+      | zero => omega
+      | succ fuel' =>
+          cases fuel' with
+          | zero => omega
+          | succ fuel'' =>
+              simp [toBody, execIRStmts, execIRStmt, IRState.setVars]
+  | cons binding rest ih =>
+      rcases binding with ⟨target, assigned⟩
+      cases fuel with
+      | zero =>
+          simp at hFuel
+      | succ fuel1 =>
+          cases fuel1 with
+          | zero =>
+              simp at hFuel
+          | succ fuel2 =>
+              have hRestFuel : rest.length + 2 ≤ Nat.succ fuel2 := by
+                simp at hFuel
+                omega
+              simp [toBody, execIRStmts, execIRStmt, evalIRExpr,
+                IRState.setVars]
+              exact ih (Nat.succ fuel2) (state.setVar target assigned)
+                hRestFuel
+
+theorem applyNative_ok_of_ok
+    (shared : EvmYul.SharedState EvmYul.OperationType.Yul)
+    (store : EvmYul.Yul.VarStore)
+    (bindings : List (String × Nat)) :
+    ∃ store',
+      (applyNative (EvmYul.Yul.State.Ok shared store) bindings).reviveJump =
+        EvmYul.Yul.State.Ok shared store' := by
+  induction bindings generalizing store with
+  | nil =>
+      exact ⟨store, by simp [applyNative, EvmYul.Yul.State.setLeave,
+        EvmYul.Yul.State.reviveJump, EvmYul.Yul.State.revive]⟩
+  | cons binding rest ih =>
+      rcases binding with ⟨target, assigned⟩
+      simp [applyNative, EvmYul.Yul.State.insert]
+      exact ih ((store.insert target (EvmYul.UInt256.ofNat assigned)))
+
+theorem execSeq_toNativeBody_ok_of_targetsFreshFrom
+    (fuel : Nat)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (shared : EvmYul.SharedState EvmYul.OperationType.Yul)
+    (store : EvmYul.Yul.VarStore)
+    (bindings : List (String × Nat))
+    (hFuel : bindings.length + 3 ≤ fuel)
+    (hFresh :
+      NativeGeneratedSelectedUserBodyLiteralLetBindings.targetsFreshFrom
+        (EvmYul.Yul.State.Ok shared store) bindings) :
+    EvmYul.Yul.execSeq fuel (toNativeBody bindings) codeOverride
+        (EvmYul.Yul.State.Ok shared store) =
+      .ok (applyNative (EvmYul.Yul.State.Ok shared store) bindings) := by
+  induction bindings generalizing fuel store with
+  | nil =>
+      cases fuel with
+      | zero => omega
+      | succ fuel1 =>
+          cases fuel1 with
+          | zero => omega
+          | succ fuel2 =>
+              simp [toNativeBody, applyNative, EvmYul.Yul.execSeq,
+                EvmYul.Yul.exec, EvmYul.Yul.State.setLeave]
+  | cons binding rest ih =>
+      rcases binding with ⟨target, assigned⟩
+      dsimp [NativeGeneratedSelectedUserBodyLiteralLetBindings.targetsFreshFrom]
+        at hFresh
+      rcases hFresh with ⟨hHeadFresh, hRestFresh⟩
+      cases fuel with
+      | zero =>
+          simp at hFuel
+      | succ fuel1 =>
+          cases fuel1 with
+          | zero =>
+              simp at hFuel
+          | succ fuel2 =>
+              cases fuel2 with
+              | zero =>
+                  simp at hFuel
+              | succ fuelRest =>
+                  let stmt : EvmYul.Yul.Ast.Stmt :=
+                    .Let [target]
+                      (some
+                        (Compiler.Proofs.YulGeneration.Backends.lowerExprNative
+                          (Yul.YulExpr.lit assigned)))
+                  have hHead :
+                      EvmYul.Yul.exec (fuelRest + 2) stmt codeOverride
+                          (EvmYul.Yul.State.Ok shared store) =
+                        .ok
+                          ((EvmYul.Yul.State.Ok shared store).insert target
+                            (EvmYul.UInt256.ofNat assigned)) := by
+                    simpa [stmt,
+                      Compiler.Proofs.YulGeneration.Backends.lowerExprNative]
+                      using
+                        (Compiler.Proofs.YulGeneration.Backends.Native.exec_let_lit_ok
+                          fuelRest target (EvmYul.UInt256.ofNat assigned)
+                          codeOverride (EvmYul.Yul.State.Ok shared store)
+                          hHeadFresh)
+                  have hTailFuel : rest.length + 3 ≤ fuelRest + 2 := by
+                    simp at hFuel
+                    omega
+                  have hTailFresh :
+                      NativeGeneratedSelectedUserBodyLiteralLetBindings.targetsFreshFrom
+                        (EvmYul.Yul.State.Ok shared
+                          (store.insert target
+                            (EvmYul.UInt256.ofNat assigned))) rest := by
+                    simpa [EvmYul.Yul.State.insert] using hRestFresh
+                  have hTail :=
+                    ih (fuelRest + 2)
+                      (store.insert target (EvmYul.UInt256.ofNat assigned))
+                      hTailFuel hTailFresh
+                  have hSeqFuel :
+                      fuelRest + 1 + 1 + 1 =
+                        Nat.succ (fuelRest + 2) := by
+                    omega
+                  rw [hSeqFuel]
+                  change
+                    EvmYul.Yul.execSeq (Nat.succ (fuelRest + 2))
+                        (stmt :: toNativeBody rest) codeOverride
+                        (EvmYul.Yul.State.Ok shared store) =
+                      .ok
+                        (applyNative (EvmYul.Yul.State.Ok shared store)
+                          ((target, assigned) :: rest))
+                  rw [Compiler.Proofs.YulGeneration.Backends.Native.execSeq_cons_ok_eq
+                      (fuelRest + 2) stmt (toNativeBody rest) codeOverride
+                      (EvmYul.Yul.State.Ok shared store)
+                      ((EvmYul.Yul.State.Ok shared store).insert target
+                        (EvmYul.UInt256.ofNat assigned)) hHead]
+                  simpa [stmt, toNativeBody, applyNative,
+                      EvmYul.Yul.State.insert] using hTail
+
+private theorem NativeSeqPreservesWord_revived_toNativeBody_of_generatedPrefixFreshBindings
+    (name : EvmYul.Identifier)
+    (expected : EvmYul.Literal)
+    (bindings : List (String × Nat))
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (hFresh :
+      ∀ target assigned,
+        (target, assigned) ∈ bindings → name ≠ target) :
+    Compiler.Proofs.YulGeneration.Backends.Native.NativeSeqPreservesWord_revived
+      name expected (toNativeBody bindings) codeOverride := by
+  induction bindings with
+  | nil =>
+      simpa [toNativeBody] using
+        Compiler.Proofs.YulGeneration.Backends.Native.NativeSeqPreservesWord_revived_cons
+          name expected EvmYul.Yul.Ast.Stmt.Leave [] codeOverride
+          (Compiler.Proofs.YulGeneration.Backends.Native.NativeStmtPreservesWord_revived_leave
+            name expected codeOverride)
+          (Compiler.Proofs.YulGeneration.Backends.Native.NativeSeqPreservesWord_revived_nil
+            name expected codeOverride)
+  | cons binding rest ih =>
+      rcases binding with ⟨target, assigned⟩
+      have hHead :
+          Compiler.Proofs.YulGeneration.Backends.Native.NativeStmtPreservesWord_revived
+            name expected
+            (.Let [target]
+              (some
+                (Compiler.Proofs.YulGeneration.Backends.lowerExprNative
+                  (Yul.YulExpr.lit assigned))))
+            codeOverride := by
+        simpa [Compiler.Proofs.YulGeneration.Backends.lowerExprNative] using
+          Compiler.Proofs.YulGeneration.Backends.Native.NativeStmtPreservesWord_revived_let_lit_of_ne
+            name target expected (EvmYul.UInt256.ofNat assigned) codeOverride
+            (hFresh target assigned (by simp))
+      have hTail :
+          Compiler.Proofs.YulGeneration.Backends.Native.NativeSeqPreservesWord_revived
+            name expected (toNativeBody rest) codeOverride :=
+        ih (by
+          intro target' assigned' hMem
+          exact hFresh target' assigned' (by simp [hMem]))
+      simpa [toNativeBody] using
+        Compiler.Proofs.YulGeneration.Backends.Native.NativeSeqPreservesWord_revived_cons
+          name expected
+          (.Let [target]
+            (some
+              (Compiler.Proofs.YulGeneration.Backends.lowerExprNative
+                (Yul.YulExpr.lit assigned))))
+          (toNativeBody rest) codeOverride hHead hTail
+
+private theorem NativeSeqPreservesLookup_revived_toNativeBody_of_generatedPrefixFreshBindings
+    (name : EvmYul.Identifier)
+    (expected : EvmYul.Literal)
+    (bindings : List (String × Nat))
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (hFresh :
+      ∀ target assigned,
+        (target, assigned) ∈ bindings → name ≠ target) :
+    Compiler.Proofs.YulGeneration.Backends.Native.NativeSeqPreservesLookup_revived
+      name expected (toNativeBody bindings) codeOverride := by
+  induction bindings with
+  | nil =>
+      simpa [toNativeBody] using
+        Compiler.Proofs.YulGeneration.Backends.Native.NativeSeqPreservesLookup_revived_cons
+          name expected EvmYul.Yul.Ast.Stmt.Leave [] codeOverride
+          (Compiler.Proofs.YulGeneration.Backends.Native.NativeStmtPreservesLookup_revived_leave
+            name expected codeOverride)
+          (Compiler.Proofs.YulGeneration.Backends.Native.NativeSeqPreservesLookup_revived_nil
+            name expected codeOverride)
+  | cons binding rest ih =>
+      rcases binding with ⟨target, assigned⟩
+      have hHead :
+          Compiler.Proofs.YulGeneration.Backends.Native.NativeStmtPreservesLookup_revived
+            name expected
+            (.Let [target]
+              (some
+                (Compiler.Proofs.YulGeneration.Backends.lowerExprNative
+                  (Yul.YulExpr.lit assigned))))
+            codeOverride := by
+        simpa [Compiler.Proofs.YulGeneration.Backends.lowerExprNative] using
+          Compiler.Proofs.YulGeneration.Backends.Native.NativeStmtPreservesLookup_revived_let_lit_of_ne
+            name target expected (EvmYul.UInt256.ofNat assigned) codeOverride
+            (hFresh target assigned (by simp))
+      have hTail :
+          Compiler.Proofs.YulGeneration.Backends.Native.NativeSeqPreservesLookup_revived
+            name expected (toNativeBody rest) codeOverride :=
+        ih (by
+          intro target' assigned' hMem
+          exact hFresh target' assigned' (by simp [hMem]))
+      simpa [toNativeBody] using
+        Compiler.Proofs.YulGeneration.Backends.Native.NativeSeqPreservesLookup_revived_cons
+          name expected
+          (.Let [target]
+            (some
+              (Compiler.Proofs.YulGeneration.Backends.lowerExprNative
+                (Yul.YulExpr.lit assigned))))
+          (toNativeBody rest) codeOverride hHead hTail
+
+private theorem revived_applyNative_eq_literal_revivedNative_ok
+    (shared : EvmYul.SharedState EvmYul.OperationType.Yul)
+    (store : EvmYul.Yul.VarStore)
+    (bindings : List (String × Nat)) :
+    (applyNative (EvmYul.Yul.State.Ok shared store) bindings).reviveJump =
+      NativeGeneratedSelectedUserBodyLiteralLetBindings.revivedNative
+        (EvmYul.Yul.State.Ok shared store) bindings := by
+  induction bindings generalizing store with
+  | nil =>
+      simp [applyNative,
+        NativeGeneratedSelectedUserBodyLiteralLetBindings.revivedNative,
+        NativeGeneratedSelectedUserBodyLiteralLetBindings.applyNative,
+        EvmYul.Yul.State.setLeave, EvmYul.Yul.State.reviveJump,
+        EvmYul.Yul.State.revive]
+  | cons binding rest ih =>
+      rcases binding with ⟨target, assigned⟩
+      simpa [applyNative,
+        NativeGeneratedSelectedUserBodyLiteralLetBindings.revivedNative,
+        NativeGeneratedSelectedUserBodyLiteralLetBindings.applyNative,
+        EvmYul.Yul.State.insert] using
+        ih (store.insert target (EvmYul.UInt256.ofNat assigned))
+
+private theorem projectResult_ok_applyNative_reviveJump_eq
+    (tx : YulTransaction)
+    (initialStorage : IRStorageSlot → IRStorageWord)
+    (initialEvents : List (List Nat))
+    (state : EvmYul.Yul.State)
+    (bindings : List (String × Nat))
+    (values : List EvmYul.Yul.Ast.Literal)
+    (hStateOk : ∃ shared store, state = EvmYul.Yul.State.Ok shared store) :
+    Compiler.Proofs.YulGeneration.Backends.Native.projectResult tx
+        initialStorage initialEvents
+        (.ok ((applyNative state bindings).reviveJump, values)) =
+      Compiler.Proofs.YulGeneration.Backends.Native.projectResult tx
+        initialStorage initialEvents (.ok (state, values)) := by
+  rcases hStateOk with ⟨shared, store, rfl⟩
+  rw [revived_applyNative_eq_literal_revivedNative_ok]
+  exact
+    NativeGeneratedSelectedUserBodyLiteralLetBindings.projectResult_ok_applyNative_reviveJump_eq
+      tx initialStorage initialEvents (EvmYul.Yul.State.Ok shared store)
+      bindings values ⟨shared, store, rfl⟩
+
+private theorem execIRFunction_extract_eq
+    (fn : IRFunction)
+    (tx : IRTransaction)
+    (state : IRState)
+    (bindings : List (String × Nat))
+    (hBody : fn.body = toBody bindings) :
+    execIRFunction fn tx.args (applyIRTransactionContext tx state) =
+      { success := true
+        returnValue := none
+        finalStorage := state.storage
+        finalMappings := Compiler.Proofs.storageAsMappings state.storage
+        events := state.events } := by
+  rw [execIRFunction]
+  rw [hBody]
+  rw [execIRStmts_continue]
+  · simp [applyIRTransactionContext]
+  · have hSize := sizeOf_list_ge_length (xs := toBody bindings)
+    simp at hSize
+    omega
+
+private theorem nativeResultsMatchOn_execIRFunction_body_markedPrefix
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (nativeContract : EvmYul.Yul.Ast.YulContract)
+    (fn : IRFunction)
+    (switchId : Nat)
+    (store : EvmYul.Yul.VarStore)
+    (bindings : List (String × Nat))
+    (hBody : fn.body = toBody bindings) :
+    nativeResultsMatchOn observableSlots
+      (execIRFunction fn tx.args (applyIRTransactionContext tx state))
+      (.ok
+        (Compiler.Proofs.YulGeneration.Backends.Native.projectResult
+            (YulTransaction.ofIR tx) state.storage state.events
+            (.ok
+              ((revivedNative
+                (Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId
+                  nativeContract (YulTransaction.ofIR tx) state.storage
+                  (Compiler.Proofs.YulGeneration.Backends.Native.materializedStorageSlots
+                    (Compiler.runtimeCode irContract) observableSlots)
+                    switchId store)
+                  bindings), [])))) := by
+  let entry :=
+    Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId
+      nativeContract (YulTransaction.ofIR tx) state.storage
+      (Compiler.Proofs.YulGeneration.Backends.Native.materializedStorageSlots
+        (Compiler.runtimeCode irContract) observableSlots)
+      switchId store
+  have hEntryOk :
+      ∃ shared store, entry = EvmYul.Yul.State.Ok shared store := by
+    simp [entry,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStorePrefixStateForId,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryState,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemorySharedState,
+      EvmYul.Yul.State.insert]
+  have hProject :
+        Compiler.Proofs.YulGeneration.Backends.Native.projectResult
+            (YulTransaction.ofIR tx) state.storage state.events
+            (.ok ((revivedNative entry bindings), [])) =
+          Compiler.Proofs.YulGeneration.Backends.Native.projectResult
+            (YulTransaction.ofIR tx) state.storage state.events
+            (.ok (entry, [])) :=
+    projectResult_ok_applyNative_reviveJump_eq
+      (YulTransaction.ofIR tx) state.storage state.events entry bindings []
+      hEntryOk
+  simp only [nativeResultsMatchOn,
+    Compiler.Proofs.YulGeneration.Backends.Native.nativeResultsMatchOn]
+  rw [execIRFunction_extract_eq fn tx state bindings hBody]
+  change
+    Compiler.Proofs.YulGeneration.Backends.Native.nativeResultsMatchOn
+      observableSlots
+      { success := true
+        returnValue := none
+        finalStorage := state.storage
+        finalMappings := Compiler.Proofs.storageAsMappings state.storage
+        events := state.events }
+        (.ok
+          (Compiler.Proofs.YulGeneration.Backends.Native.projectResult
+            (YulTransaction.ofIR tx) state.storage state.events
+            (.ok ((revivedNative entry bindings), []))))
+  rw [hProject]
+  simp only [Compiler.Proofs.YulGeneration.Backends.Native.nativeResultsMatchOn]
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · simp [Compiler.Proofs.YulGeneration.Backends.Native.projectResult, entry,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStorePrefixStateForId,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryState,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemorySharedState,
+      EvmYul.Yul.State.insert]
+  · simp [Compiler.Proofs.YulGeneration.Backends.Native.projectResult, entry,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStorePrefixStateForId,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryState,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemorySharedState,
+      EvmYul.Yul.State.insert]
+  · intro slot hSlot
+    simpa [Compiler.Proofs.YulGeneration.Backends.Native.projectResult,
+      entry] using
+      (Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId_materializedStorageSlot
+        nativeContract (YulTransaction.ofIR tx) state.storage
+        (Compiler.Proofs.YulGeneration.Backends.Native.materializedStorageSlots
+          (Compiler.runtimeCode irContract) observableSlots)
+        switchId store slot
+        (Compiler.Proofs.YulGeneration.Backends.Native.observableSlot_mem_materializedStorageSlots
+          (Compiler.runtimeCode irContract) observableSlots slot hSlot)).symm
+  · simpa [Compiler.Proofs.YulGeneration.Backends.Native.projectResult, entry,
+      Compiler.Proofs.YulGeneration.Backends.Native.projectLogsFromState]
+      using
+        (Compiler.Proofs.YulGeneration.Backends.Native.projectLogsFromState_nativeSwitchStoreMarkedPrefixStateForId
+          nativeContract (YulTransaction.ofIR tx) state.storage
+          (Compiler.Proofs.YulGeneration.Backends.Native.materializedStorageSlots
+            (Compiler.runtimeCode irContract) observableSlots)
+          switchId store)
+
+end NativeGeneratedSelectedUserBodyLiteralLetBindingsLeave
+
 /-- Actual generated-case fuel bound for structural literal-let selected bodies.
 
 The older selected-body result bridge quantifies over arbitrary `cases'`, so it
@@ -27488,10 +28041,115 @@ private theorem NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_no
   · simpa [nativeYul, final, entry, switchId,
       NativeGeneratedSelectedUserBodyNoOpPrefixLiteralLetBindings.revivedNativeBody]
       using
-      (NativeGeneratedSelectedUserBodyNoOpPrefixLiteralLetBindings.nativeResultsMatchOn_execIRFunction_body_markedPrefix
+        (NativeGeneratedSelectedUserBodyNoOpPrefixLiteralLetBindings.nativeResultsMatchOn_execIRFunction_body_markedPrefix
+          irContract tx state observableSlots nativeContract fn switchId
+          Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchHasSelectorStore
+          hBodyStruct)
+
+/-- Bridge-level execution constructor for literal-`let` binding lists ending in
+bare `leave`. -/
+private theorem NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_literal_let_bindings_leave_with_fuel_and_fresh
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (hLetBindings :
+      ∀ fn,
+        irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+          some fn →
+        ∃ bindings : List (String × Nat),
+          fn.body =
+            NativeGeneratedSelectedUserBodyLiteralLetBindingsLeave.toBody
+              bindings ∧
+          NativeGeneratedSelectedUserBodyLiteralLetBindings.GeneratedPrefixFreshBindings
+            bindings)
+    (hFuel :
+      ∀ (fn : IRFunction) (bindings : List (String × Nat)),
+        irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+          some fn →
+        fn.body =
+          NativeGeneratedSelectedUserBodyLiteralLetBindingsLeave.toBody
+            bindings →
+        ∀ (reservedNames : List String) (n0 : Nat)
+          (cases' suffix : List (Nat × List EvmYul.Yul.Ast.Stmt)),
+          NativeGeneratedLoweredSwitchCases irContract reservedNames n0
+            cases' →
+          bindings.length + 3 ≤
+            nativeGeneratedSelectorHitUserBodyFuel irContract fn cases' +
+              suffix.length + 9) :
+    NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived irContract tx
+      state observableSlots := by
+  intro nativeContract fn reservedNames n0 cases' bodyNative bodyEnd
+    userBodyStart _hLowerRuntime hFind hLowerCases hUserBodyLower _hguards
+    _hArgs
+  obtain ⟨bindings, hBody, hFresh⟩ := hLetBindings fn hFind
+  rw [hBody] at hUserBodyLower
+  rw [NativeGeneratedSelectedUserBodyLiteralLetBindingsLeave.lowerStmtsNativeWithSwitchIds_toBody]
+    at hUserBodyLower
+  simp at hUserBodyLower
+  rcases hUserBodyLower with ⟨rfl, _rfl⟩
+  let switchId :=
+    Compiler.Proofs.YulGeneration.Backends.freshNativeSwitchId reservedNames n0
+  let entry :=
+    Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId
+      nativeContract (YulTransaction.ofIR tx) state.storage
+      (Compiler.Proofs.YulGeneration.Backends.Native.materializedStorageSlots
+        (Compiler.runtimeCode irContract) observableSlots)
+      switchId
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchHasSelectorStore
+  have hEntryOk : ∃ shared store, entry = EvmYul.Yul.State.Ok shared store := by
+    simp [entry, switchId,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStoreMarkedPrefixStateForId,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryStorePrefixStateForId,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemoryState,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchPostInitFreeMemorySharedState,
+      Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchHasSelectorStore,
+      EvmYul.Yul.State.insert]
+  rcases hEntryOk with ⟨entryShared, entryStore, hEntryOk⟩
+  have hFreshEntry :
+      NativeGeneratedSelectedUserBodyLiteralLetBindings.targetsFreshFrom
+        entry bindings := by
+    simpa [entry, switchId] using
+      NativeGeneratedSelectedUserBodyLiteralLetBindings.targetsFreshFrom_markedPrefixStateForId_of_generatedPrefixFreshBindings
+        irContract tx state observableSlots nativeContract reservedNames n0
+        bindings hFresh
+  have hFreshOk :
+      NativeGeneratedSelectedUserBodyLiteralLetBindings.targetsFreshFrom
+        (EvmYul.Yul.State.Ok entryShared entryStore) bindings := by
+    simpa [hEntryOk] using hFreshEntry
+  obtain ⟨finalStore, hReviveOkRaw⟩ :=
+    NativeGeneratedSelectedUserBodyLiteralLetBindingsLeave.applyNative_ok_of_ok
+      entryShared entryStore bindings
+  let final :=
+    NativeGeneratedSelectedUserBodyLiteralLetBindingsLeave.applyNative entry
+      bindings
+  let nativeYul :=
+    Compiler.Proofs.YulGeneration.Backends.Native.projectResult
+      (YulTransaction.ofIR tx) state.storage state.events
+      (.ok (final.reviveJump, []))
+  have hReviveOk : final.reviveJump =
+      EvmYul.Yul.State.Ok entryShared finalStore := by
+    simpa [final, hEntryOk] using hReviveOkRaw
+  refine ⟨final, nativeYul, entryShared, finalStore, ?_, hReviveOk, rfl, ?_⟩
+  · intro _pre suffix
+    have hFuelBound :
+        bindings.length + 3 ≤
+          nativeGeneratedSelectorHitUserBodyFuel irContract fn cases' +
+            suffix.length + 9 :=
+      hFuel fn bindings hFind hBody reservedNames n0 cases' suffix hLowerCases
+    have hExec :=
+      NativeGeneratedSelectedUserBodyLiteralLetBindingsLeave.execSeq_toNativeBody_ok_of_targetsFreshFrom
+        (nativeGeneratedSelectorHitUserBodyFuel irContract fn cases' +
+          suffix.length + 9)
+        (some nativeContract) entryShared entryStore bindings hFuelBound
+        hFreshOk
+    simpa [final, entry, switchId, hEntryOk] using hExec
+  · simpa [nativeYul, final, entry, switchId,
+      NativeGeneratedSelectedUserBodyLiteralLetBindingsLeave.revivedNative] using
+      (NativeGeneratedSelectedUserBodyLiteralLetBindingsLeave.nativeResultsMatchOn_execIRFunction_body_markedPrefix
         irContract tx state observableSlots nativeContract fn switchId
         Compiler.Proofs.YulGeneration.Backends.Native.nativeSwitchHasSelectorStore
-        hBodyStruct)
+        bindings hBody)
 
 /-- Build the direct selected-user-body ExecBridge for singleton literal `let`
 bodies whose target is fresh for the generated dispatcher prefix. -/
@@ -30746,6 +31404,51 @@ private theorem NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuelRevived.o
         discrName (EvmYul.UInt256.ofNat tx.functionSelector) bindings
         (some nativeContract)
         (by
+              intro target assigned hMem
+              exact Ne.symm ((hFresh.2 target assigned hMem).2 reservedNames n0).2)
+
+private theorem NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuelRevived.of_literal_let_bindings_leave
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (hLetBindings :
+      ∀ fn,
+        irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+          some fn →
+        ∃ bindings : List (String × Nat),
+          fn.body =
+            NativeGeneratedSelectedUserBodyLiteralLetBindingsLeave.toBody
+              bindings ∧
+          NativeGeneratedSelectedUserBodyLiteralLetBindings.GeneratedPrefixFreshBindings
+            bindings) :
+    NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuelRevived irContract tx := by
+  intro nativeContract fn reservedNames n0 cases' body' bodyNative bodyStart
+    bodyEnd userBodyStart _hLowerRuntime hFind _hCase _hBodyLower
+    hUserBodyLower _pre _suffix _hCases
+  obtain ⟨bindings, hBody, hFresh⟩ := hLetBindings fn hFind
+  have hUserLower := hUserBodyLower
+  rw [hBody] at hUserLower
+  rw [NativeGeneratedSelectedUserBodyLiteralLetBindingsLeave.lowerStmtsNativeWithSwitchIds_toBody]
+    at hUserLower
+  simp at hUserLower
+  rcases hUserLower with ⟨rfl, _rfl⟩
+  let switchId :=
+    Compiler.Proofs.YulGeneration.Backends.freshNativeSwitchId reservedNames n0
+  let matchedName :=
+    Compiler.Proofs.YulGeneration.Backends.nativeSwitchMatchedTempName switchId
+  let discrName :=
+    Compiler.Proofs.YulGeneration.Backends.nativeSwitchDiscrTempName switchId
+  refine ⟨?_, ?_⟩
+  · simpa [switchId, matchedName] using
+      NativeGeneratedSelectedUserBodyLiteralLetBindingsLeave.NativeSeqPreservesWord_revived_toNativeBody_of_generatedPrefixFreshBindings
+        matchedName (EvmYul.UInt256.ofNat 1) bindings (some nativeContract)
+        (by
+          intro target assigned hMem
+          exact Ne.symm ((hFresh.2 target assigned hMem).2 reservedNames n0).1)
+  · simpa [switchId, discrName] using
+      NativeGeneratedSelectedUserBodyLiteralLetBindingsLeave.NativeSeqPreservesLookup_revived_toNativeBody_of_generatedPrefixFreshBindings
+        discrName (EvmYul.UInt256.ofNat tx.functionSelector) bindings
+        (some nativeContract)
+        (by
           intro target assigned hMem
           exact Ne.symm ((hFresh.2 target assigned hMem).2 reservedNames n0).2)
 
@@ -32110,8 +32813,84 @@ theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_literal_let_binding
       intro reservedNames n0 cases' suffix hLowerCases
       rcases hLowerCases with ⟨midN, hLowerCases⟩
       exact
-        nativeGeneratedSelectorHitUserBodyFuel_bound_of_literal_let_bindings_lowered_cases
-          hCompile hSupported hFind hBody hLowerCases suffix)
+          nativeGeneratedSelectorHitUserBodyFuel_bound_of_literal_let_bindings_lowered_cases
+            hCompile hSupported hFind hBody hLowerCases suffix)
+
+/-- Structural selected-body bridge for literal-`let` binding lists ending in bare
+`leave`, with the remaining exact-fuel obligation exposed explicitly. -/
+theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_literal_let_bindings_leave_with_fuel
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (hLetBindings :
+      ∀ fn,
+        irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+          some fn →
+        ∃ bindings : List (String × Nat),
+          fn.body =
+            NativeGeneratedSelectedUserBodyLiteralLetBindingsLeave.toBody
+              bindings ∧
+          NativeGeneratedSelectedUserBodyLiteralLetBindings.GeneratedPrefixFreshBindings
+            bindings)
+    (hFuel :
+      ∀ (fn : IRFunction) (bindings : List (String × Nat)),
+        irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+          some fn →
+        fn.body =
+          NativeGeneratedSelectedUserBodyLiteralLetBindingsLeave.toBody
+            bindings →
+        ∀ (reservedNames : List String) (n0 : Nat)
+          (cases' suffix : List (Nat × List EvmYul.Yul.Ast.Stmt)),
+          NativeGeneratedLoweredSwitchCases irContract reservedNames n0
+            cases' →
+          bindings.length + 3 ≤
+            nativeGeneratedSelectorHitUserBodyFuel irContract fn cases' +
+              suffix.length + 9) :
+    NativeGeneratedSelectedUserBodyResultBridgeAtFuel irContract tx state
+      observableSlots :=
+  NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_exec_only_and_preserves
+    irContract tx state observableSlots
+    (NativeGeneratedSelectedUserBodyExecOnlyBridgeAtFuelRevived.of_literal_let_bindings_leave_with_fuel_and_fresh
+      irContract tx state observableSlots hLetBindings hFuel)
+    (NativeGeneratedSelectorHitUserBodyPreservesBridgeAtFuelRevived.of_literal_let_bindings_leave
+      irContract tx hLetBindings)
+
+/-- Compile-generated structural selected-body bridge for arbitrary literal-`let`
+binding lists ending in bare `leave`. -/
+theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_literal_let_bindings_leave_lowered_cases
+    {spec : CompilationModel.CompilationModel} {selectors : List Nat}
+    (irContract : IRContract)
+    (tx : IRTransaction)
+    (state : IRState)
+    (observableSlots : List Nat)
+    (hCompile : CompilationModel.compile spec selectors = .ok irContract)
+    (hSupported : SupportedSpec spec selectors)
+    (hLetBindings :
+      ∀ fn,
+        irContract.functions.find? (fun fn => fn.selector == tx.functionSelector) =
+          some fn →
+        ∃ bindings : List (String × Nat),
+          fn.body =
+            NativeGeneratedSelectedUserBodyLiteralLetBindingsLeave.toBody
+              bindings ∧
+          NativeGeneratedSelectedUserBodyLiteralLetBindings.GeneratedPrefixFreshBindings
+            bindings) :
+    NativeGeneratedSelectedUserBodyResultBridgeAtFuel irContract tx state
+      observableSlots :=
+  NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_literal_let_bindings_leave_with_fuel
+    irContract tx state observableSlots hLetBindings
+    (by
+      intro fn bindings hFind hBody reservedNames n0 cases' suffix hLowerCases
+      rcases hLowerCases with ⟨midN, hLowerCases⟩
+      have hFuel :=
+        nativeGeneratedSelectorHitUserBodyFuel_bound_of_selected_body_length_lowered_cases
+          hCompile hSupported hFind hLowerCases suffix
+      have hLen : fn.body.length = bindings.length + 1 := by
+        simpa [hBody] using
+          NativeGeneratedSelectedUserBodyLiteralLetBindingsLeave.toBody_length
+            bindings
+      omega)
 
 /-- Block-wrapped leave selected user bodies discharge the unified selected-body
 result boundary. -/
@@ -32276,21 +33055,33 @@ inductive NativeGeneratedSelectedUserBodySimpleShape
               (fun fn => fn.selector == tx.functionSelector) =
             some fn →
           NativeGeneratedSelectedUserBodyLiteralLetSequenceBody fn.body)
-  | literalLetBindings
-      (hBody :
-        ∀ fn,
-          irContract.functions.find?
-              (fun fn => fn.selector == tx.functionSelector) =
+    | literalLetBindings
+        (hBody :
+          ∀ fn,
+            irContract.functions.find?
+                (fun fn => fn.selector == tx.functionSelector) =
             some fn →
           ∃ bindings : List (String × Nat),
             fn.body =
               NativeGeneratedSelectedUserBodyLiteralLetBindings.toBody bindings ∧
-            NativeGeneratedSelectedUserBodyLiteralLetBindings.GeneratedPrefixFreshBindings
-              bindings)
-  | singletonLetLit
-      (hBody :
-        ∀ fn,
-          irContract.functions.find?
+              NativeGeneratedSelectedUserBodyLiteralLetBindings.GeneratedPrefixFreshBindings
+                bindings)
+    | literalLetBindingsLeave
+        (hBody :
+          ∀ fn,
+            irContract.functions.find?
+                (fun fn => fn.selector == tx.functionSelector) =
+              some fn →
+            ∃ bindings : List (String × Nat),
+              fn.body =
+                NativeGeneratedSelectedUserBodyLiteralLetBindingsLeave.toBody
+                  bindings ∧
+              NativeGeneratedSelectedUserBodyLiteralLetBindings.GeneratedPrefixFreshBindings
+                bindings)
+    | singletonLetLit
+        (hBody :
+          ∀ fn,
+            irContract.functions.find?
               (fun fn => fn.selector == tx.functionSelector) =
             some fn →
           ∃ target assigned,
@@ -32387,17 +33178,25 @@ inductive NativeGeneratedSelectedUserBodySimpleBody :
       (body : List Yul.YulStmt)
       (hSeq : NativeGeneratedSelectedUserBodyLiteralLetSequenceBody body) :
       NativeGeneratedSelectedUserBodySimpleBody body
-  | literalLetBindings
-      (bindings : List (String × Nat))
-      (hFresh :
-        NativeGeneratedSelectedUserBodyLiteralLetBindings.GeneratedPrefixFreshBindings
-          bindings) :
-      NativeGeneratedSelectedUserBodySimpleBody
-        (NativeGeneratedSelectedUserBodyLiteralLetBindings.toBody bindings)
-  | singletonLetLit
-      (target : String)
-      (assigned : Nat)
-      (hFresh : NativeGeneratedSelectedUserBodyLetLiteralTargetFresh target) :
+    | literalLetBindings
+        (bindings : List (String × Nat))
+        (hFresh :
+          NativeGeneratedSelectedUserBodyLiteralLetBindings.GeneratedPrefixFreshBindings
+            bindings) :
+        NativeGeneratedSelectedUserBodySimpleBody
+          (NativeGeneratedSelectedUserBodyLiteralLetBindings.toBody bindings)
+    | literalLetBindingsLeave
+        (bindings : List (String × Nat))
+        (hFresh :
+          NativeGeneratedSelectedUserBodyLiteralLetBindings.GeneratedPrefixFreshBindings
+            bindings) :
+        NativeGeneratedSelectedUserBodySimpleBody
+          (NativeGeneratedSelectedUserBodyLiteralLetBindingsLeave.toBody
+            bindings)
+    | singletonLetLit
+        (target : String)
+        (assigned : Nat)
+        (hFresh : NativeGeneratedSelectedUserBodyLetLiteralTargetFresh target) :
       NativeGeneratedSelectedUserBodySimpleBody
         [.let_ target (.lit assigned)]
   | twoLetLit
@@ -32444,13 +33243,15 @@ def checked? (body : List Yul.YulStmt) : Bool :=
     true
   else if NativeGeneratedSelectedUserBodyNoOpPrefixLeave.checked? body then
     true
-  else if NativeGeneratedSelectedUserBodyNoOpPrefixBlockLeave.checked? body then
-    true
-  else if NativeGeneratedSelectedUserBodyNoOpPrefixLiteralLetBindings.checked? body then
-    true
-  else if NativeGeneratedSelectedUserBodyEmptyBlockPrefix.checked? body then
-    true
-  else
+    else if NativeGeneratedSelectedUserBodyNoOpPrefixBlockLeave.checked? body then
+      true
+    else if NativeGeneratedSelectedUserBodyNoOpPrefixLiteralLetBindings.checked? body then
+      true
+    else if NativeGeneratedSelectedUserBodyLiteralLetBindingsLeave.checkedUnbounded? body then
+      true
+    else if NativeGeneratedSelectedUserBodyEmptyBlockPrefix.checked? body then
+      true
+    else
     match body with
     | [] => true
     | [Yul.YulStmt.exprStmt (Yul.YulExpr.call "stop" [])] => true
@@ -32491,34 +33292,43 @@ theorem of_checked? (body : List Yul.YulStmt)
                 NativeGeneratedSelectedUserBodyNoOpPrefixLiteralLetBindings.checked?
                   body
             · simp [hNoOpPrefixLet] at h
-              cases hEmptyBlocks :
-                  NativeGeneratedSelectedUserBodyEmptyBlockPrefix.checked? body
-              · simp [hEmptyBlocks] at h
-                split at h
-                · exact empty
-                · exact stop
-                · exact leaveBody
-                · exact blockEmpty
-                · exact labelBlockEmpty
-                · exact emptyBlockPrefix 3 (by omega)
-                · exact emptyBlockPrefix 4 (by omega)
-                · exact emptyBlockPrefix 5 (by omega)
-                · exact emptyBlockPrefix 6 (by omega)
-                · exact emptyBlockPrefix 7 (by omega)
-                · exact singletonComment _
-                · exact blockLeave
-                · exact labelLeave
-                · exact labelBlockLeave
-                · contradiction
+              cases hLetLeave :
+                  NativeGeneratedSelectedUserBodyLiteralLetBindingsLeave.checkedUnbounded?
+                    body
+              · simp [hLetLeave] at h
+                cases hEmptyBlocks :
+                    NativeGeneratedSelectedUserBodyEmptyBlockPrefix.checked? body
+                · simp [hEmptyBlocks] at h
+                  split at h
+                  · exact empty
+                  · exact stop
+                  · exact leaveBody
+                  · exact blockEmpty
+                  · exact labelBlockEmpty
+                  · exact emptyBlockPrefix 3 (by omega)
+                  · exact emptyBlockPrefix 4 (by omega)
+                  · exact emptyBlockPrefix 5 (by omega)
+                  · exact emptyBlockPrefix 6 (by omega)
+                  · exact emptyBlockPrefix 7 (by omega)
+                  · exact singletonComment _
+                  · exact blockLeave
+                  · exact labelLeave
+                  · exact labelBlockLeave
+                  · contradiction
+                · exact
+                    let ⟨n, hBody⟩ :=
+                      NativeGeneratedSelectedUserBodyEmptyBlockPrefix.checked?_eq_true
+                        body hEmptyBlocks
+                    hBody ▸ emptyBlockPrefixUnbounded n
               · exact
-                  let ⟨n, hBody⟩ :=
-                    NativeGeneratedSelectedUserBodyEmptyBlockPrefix.checked?_eq_true
-                      body hEmptyBlocks
-                  hBody ▸ emptyBlockPrefixUnbounded n
+                  let ⟨bindings, hBody, hFresh⟩ :=
+                    NativeGeneratedSelectedUserBodyLiteralLetBindingsLeave.checkedUnbounded?_eq_true
+                      hLetLeave
+                  hBody ▸ literalLetBindingsLeave bindings hFresh
             · exact
                 noOpPrefixLiteralLetBindings body
                   (NativeGeneratedSelectedUserBodyNoOpPrefixLiteralLetBindings.of_checked?
-                    body hNoOpPrefixLet)
+                  body hNoOpPrefixLet)
           · exact
               noOpPrefixBlockLeave body
                 (NativeGeneratedSelectedUserBodyNoOpPrefixBlockLeave.of_checked?
@@ -32683,17 +33493,25 @@ theorem of_checked?
                     rw [hFind] at hFn
                     cases hFn
                     exact hSeq)
-          | literalLetBindings bindings hFresh =>
-              exact
-                NativeGeneratedSelectedUserBodySimpleShape.literalLetBindings
-                  (by
-                    intro fn hFn
-                    rw [hFind] at hFn
-                    cases hFn
-                    exact ⟨bindings, rfl, hFresh⟩)
-          | singletonLetLit target assigned hFresh =>
-              exact
-                NativeGeneratedSelectedUserBodySimpleShape.singletonLetLit
+            | literalLetBindings bindings hFresh =>
+                exact
+                  NativeGeneratedSelectedUserBodySimpleShape.literalLetBindings
+                    (by
+                      intro fn hFn
+                      rw [hFind] at hFn
+                      cases hFn
+                      exact ⟨bindings, rfl, hFresh⟩)
+            | literalLetBindingsLeave bindings hFresh =>
+                exact
+                  NativeGeneratedSelectedUserBodySimpleShape.literalLetBindingsLeave
+                    (by
+                      intro fn hFn
+                      rw [hFind] at hFn
+                      cases hFn
+                      exact ⟨bindings, rfl, hFresh⟩)
+            | singletonLetLit target assigned hFresh =>
+                exact
+                  NativeGeneratedSelectedUserBodySimpleShape.singletonLetLit
                   (by
                     intro fn hFn
                     rw [hFind] at hFn
@@ -32813,13 +33631,17 @@ theorem NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_simple_shape
       exact
         NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_literal_let_sequence_le_three
           irContract tx state observableSlots hBody
-  | literalLetBindings hBody =>
-      exact
-        NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_literal_let_bindings_lowered_cases
-          irContract tx state observableSlots hCompile hSupported hBody
-  | singletonLetLit hBody =>
-      exact
-        NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_singleton_let_lit
+    | literalLetBindings hBody =>
+        exact
+          NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_literal_let_bindings_lowered_cases
+            irContract tx state observableSlots hCompile hSupported hBody
+    | literalLetBindingsLeave hBody =>
+        exact
+          NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_literal_let_bindings_leave_lowered_cases
+            irContract tx state observableSlots hCompile hSupported hBody
+    | singletonLetLit hBody =>
+        exact
+          NativeGeneratedSelectedUserBodyResultBridgeAtFuel.of_singleton_let_lit
           irContract tx state observableSlots hBody
   | twoLetLit hBody =>
       exact
