@@ -5031,6 +5031,135 @@ theorem execIRFunction_store0_calldataload4_stop_of_args_cons
     Compiler.Proofs.YulGeneration.calldataloadWord, Compiler.Constants.evmModulus,
     applyIRTransactionContext, hArgs]
 
+theorem execIRFunction_sstore0_add_sload0_lit_stop
+    (fn : IRFunction) (tx : IRTransaction) (initialState : IRState)
+    (delta : Nat)
+    (hBody : fn.body = [
+      YulStmt.exprStmt (YulExpr.call "sstore" [
+        YulExpr.lit 0,
+        YulExpr.call "add" [
+          YulExpr.call "sload" [YulExpr.lit 0],
+          YulExpr.lit delta]]),
+      YulStmt.exprStmt (YulExpr.call "stop" [])]) :
+    execIRFunction fn tx.args (applyIRTransactionContext tx initialState) =
+      { success := true
+        returnValue := none
+        finalStorage :=
+          Compiler.Proofs.abstractStoreStorageOrMapping initialState.storage 0
+            (((initialState.storage (IRStorageSlot.ofNat 0)).toNat + delta) %
+              Compiler.Constants.evmModulus)
+        finalMappings :=
+          Compiler.Proofs.storageAsMappings
+            (Compiler.Proofs.abstractStoreStorageOrMapping initialState.storage 0
+              (((initialState.storage (IRStorageSlot.ofNat 0)).toNat + delta) %
+                Compiler.Constants.evmModulus))
+        events := initialState.events } := by
+  have hbody : ∀ (n : Nat) (s : IRState), 2 ≤ n →
+      execIRStmts (n + 1) s
+        [YulStmt.exprStmt (YulExpr.call "sstore" [
+          YulExpr.lit 0,
+          YulExpr.call "add" [
+            YulExpr.call "sload" [YulExpr.lit 0],
+            YulExpr.lit delta]]),
+         YulStmt.exprStmt (YulExpr.call "stop" [])] =
+        .stop { s with storage :=
+          (Compiler.Proofs.abstractStoreStorageOrMapping s.storage 0
+            (((s.storage (IRStorageSlot.ofNat 0)).toNat + delta) %
+              Compiler.Constants.evmModulus)) } := by
+    intro n s hn
+    obtain ⟨k, rfl⟩ : ∃ k, n = k + 2 := ⟨n - 2, by omega⟩
+    simp +decide [execIRStmts, execIRStmt, evalIRExpr, evalIRCall,
+      evalIRExprs, evalIRCall_sload_singleton,
+      Compiler.Proofs.abstractLoadStorageOrMapping,
+      Compiler.Proofs.YulGeneration.Backends.evalBuiltinCallWithEvmYulLeanContext,
+      Compiler.Proofs.YulGeneration.Backends.evalBuiltinCallWithEvmYulLean,
+      Compiler.Proofs.YulGeneration.Backends.evalBuiltinCall,
+      Compiler.Proofs.YulGeneration.Backends.evalBuiltinCallViaEvmYulLean]
+  have hsize : 2 ≤ sizeOf
+      ([YulStmt.exprStmt (YulExpr.call "sstore" [
+          YulExpr.lit 0,
+          YulExpr.call "add" [
+            YulExpr.call "sload" [YulExpr.lit 0],
+            YulExpr.lit delta]]),
+        YulStmt.exprStmt (YulExpr.call "stop" [])] : List YulStmt) := by
+    simp
+    omega
+  unfold execIRFunction
+  simp only [hBody]
+  rw [hbody _ _ hsize]
+  simp only [IRState.foldl_setParamVars_storage,
+    IRState.foldl_setParamVars_events]
+  simp [applyIRTransactionContext]
+
+theorem execIRFunction_sstore0_sub_sload0_lit_stop
+    (fn : IRFunction) (tx : IRTransaction) (initialState : IRState)
+    (delta : Nat)
+    (hBody : fn.body = [
+      YulStmt.exprStmt (YulExpr.call "sstore" [
+        YulExpr.lit 0,
+        YulExpr.call "sub" [
+          YulExpr.call "sload" [YulExpr.lit 0],
+          YulExpr.lit delta]]),
+      YulStmt.exprStmt (YulExpr.call "stop" [])]) :
+    execIRFunction fn tx.args (applyIRTransactionContext tx initialState) =
+      { success := true
+        returnValue := none
+        finalStorage :=
+          Compiler.Proofs.abstractStoreStorageOrMapping initialState.storage 0
+            ((Compiler.Constants.evmModulus +
+                ((initialState.storage (IRStorageSlot.ofNat 0)).toNat %
+                  Compiler.Constants.evmModulus) -
+                (delta % Compiler.Constants.evmModulus)) %
+              Compiler.Constants.evmModulus)
+        finalMappings :=
+          Compiler.Proofs.storageAsMappings
+            (Compiler.Proofs.abstractStoreStorageOrMapping initialState.storage 0
+              ((Compiler.Constants.evmModulus +
+                  ((initialState.storage (IRStorageSlot.ofNat 0)).toNat %
+                    Compiler.Constants.evmModulus) -
+                  (delta % Compiler.Constants.evmModulus)) %
+                Compiler.Constants.evmModulus))
+        events := initialState.events } := by
+  have hbody : ∀ (n : Nat) (s : IRState), 2 ≤ n →
+      execIRStmts (n + 1) s
+        [YulStmt.exprStmt (YulExpr.call "sstore" [
+          YulExpr.lit 0,
+          YulExpr.call "sub" [
+            YulExpr.call "sload" [YulExpr.lit 0],
+            YulExpr.lit delta]]),
+         YulStmt.exprStmt (YulExpr.call "stop" [])] =
+        .stop { s with storage :=
+          (Compiler.Proofs.abstractStoreStorageOrMapping s.storage 0
+            ((Compiler.Constants.evmModulus +
+                ((s.storage (IRStorageSlot.ofNat 0)).toNat %
+                  Compiler.Constants.evmModulus) -
+                (delta % Compiler.Constants.evmModulus)) %
+              Compiler.Constants.evmModulus)) } := by
+    intro n s hn
+    obtain ⟨k, rfl⟩ : ∃ k, n = k + 2 := ⟨n - 2, by omega⟩
+    simp +decide [execIRStmts, execIRStmt, evalIRExpr, evalIRCall,
+      evalIRExprs, evalIRCall_sload_singleton,
+      Compiler.Proofs.abstractLoadStorageOrMapping,
+      Compiler.Proofs.YulGeneration.Backends.evalBuiltinCallWithEvmYulLeanContext,
+      Compiler.Proofs.YulGeneration.Backends.evalBuiltinCallWithEvmYulLean,
+      Compiler.Proofs.YulGeneration.Backends.evalBuiltinCall,
+      Compiler.Proofs.YulGeneration.Backends.evalBuiltinCallViaEvmYulLean]
+  have hsize : 2 ≤ sizeOf
+      ([YulStmt.exprStmt (YulExpr.call "sstore" [
+          YulExpr.lit 0,
+          YulExpr.call "sub" [
+            YulExpr.call "sload" [YulExpr.lit 0],
+            YulExpr.lit delta]]),
+        YulStmt.exprStmt (YulExpr.call "stop" [])] : List YulStmt) := by
+    simp
+    omega
+  unfold execIRFunction
+  simp only [hBody]
+  rw [hbody _ _ hsize]
+  simp only [IRState.foldl_setParamVars_storage,
+    IRState.foldl_setParamVars_events]
+  simp [applyIRTransactionContext]
+
 theorem execIRFunction_mstore0_calldataload4_return32_of_args_cons
     (fn : IRFunction) (tx : IRTransaction) (initialState : IRState)
     (arg : Nat) (rest : List Nat)
